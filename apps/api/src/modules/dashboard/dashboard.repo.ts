@@ -15,7 +15,6 @@ export async function totals(campaignId: string) {
 }
 
 export async function voteIntentBreakdown(campaignId: string) {
-  // Formato para Gráfico de Torta (Pie Chart)
   const res = await query(
     `SELECT current_vote_intent as label, COUNT(*)::int AS value
      FROM persons
@@ -28,14 +27,16 @@ export async function voteIntentBreakdown(campaignId: string) {
 }
 
 export async function missingByZone(campaignId: string, limit = 20) {
-  // Agrupa por Zona (si existe) o Barrio para gráfico de barras
-  // Prioriza Zona, si es null usa 'Sin Zona'
+  // JOIN Complejo para llegar a la ZONA desde el Ciudadano Global
   const res = await query(
     `SELECT 
        COALESCE(z.name, 'Sin Zona') as label, 
        COUNT(*)::int AS value
      FROM persons p
-     LEFT JOIN zones z ON p.zone_id = z.id
+     JOIN global_citizens g ON p.citizen_id = g.id
+     LEFT JOIN polling_tables pt ON g.voting_table_id = pt.id
+     LEFT JOIN polling_places pp ON pt.polling_place_id = pp.id
+     LEFT JOIN zones z ON pp.zone_id = z.id
      WHERE p.campaign_id=$1 AND p.has_voted=false
      GROUP BY z.name
      ORDER BY value DESC
@@ -46,20 +47,22 @@ export async function missingByZone(campaignId: string, limit = 20) {
 }
 
 export async function performanceByZone(campaignId: string) {
-  // Retorna % de votación por zona
   const res = await query(
     `SELECT 
        COALESCE(z.name, 'General') as label,
        COUNT(*)::int as total,
        SUM(CASE WHEN p.has_voted THEN 1 ELSE 0 END)::int as voted
      FROM persons p
-     LEFT JOIN zones z ON p.zone_id = z.id
+     JOIN global_citizens g ON p.citizen_id = g.id
+     LEFT JOIN polling_tables pt ON g.voting_table_id = pt.id
+     LEFT JOIN polling_places pp ON pt.polling_place_id = pp.id
+     LEFT JOIN zones z ON pp.zone_id = z.id
      WHERE p.campaign_id=$1
      GROUP BY z.name
      ORDER BY total DESC`,
     [campaignId]
   );
-  return res.rows.map(r => ({
+  return res.rows.map((r: any) => ({
     label: r.label,
     total: r.total,
     voted: r.voted,

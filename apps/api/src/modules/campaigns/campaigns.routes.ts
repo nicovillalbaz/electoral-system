@@ -17,7 +17,12 @@ export async function campaignsRoutes(app: FastifyInstance) {
   });
 
   app.post("/", { preHandler: [app.requireAuth, requireRole(["ADMIN"])] }, async (req: any) => {
-    const body = z.object({ name: z.string().min(2) }).parse(req.body);
-    return campaignCreate(body.name);
+    // Validamos que venga el cityId (UUID)
+    const body = z.object({ 
+      name: z.string().min(2),
+      cityId: z.string().uuid() 
+    }).parse(req.body);
+    
+    return campaignCreate(body.name, body.cityId);
   });
 }

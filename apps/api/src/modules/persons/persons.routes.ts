@@ -29,14 +29,15 @@ export async function personsRoutes(app: FastifyInstance) {
           documentId: z.string().min(3),
           firstName: z.string().min(1),
           lastName: z.string().min(1),
-          currentVoteIntent: z.enum(["SURE", "PROBABLE", "UNDECIDED", "OPPOSITION", "ABSTAIN"]).optional(),
+          // Actualizado con los nuevos ENUMS de V3.1
+          currentVoteIntent: z.enum(["SURE", "PROBABLE", "OPPOSITION_INTERNAL", "OPPOSITION_PARTY", "WONT_VOTE", "UNDECIDED"]).optional(),
           notes: z.string().optional(),
         })
         .parse(req.body);
 
       const campaignId = req.user.campaignId;
       const res = await personCreate(campaignId, body);
-      return res.rows[0];
+      return res;
     }
   );
 
@@ -49,15 +50,15 @@ export async function personsRoutes(app: FastifyInstance) {
         .object({
           firstName: z.string().optional(),
           lastName: z.string().optional(),
-          currentVoteIntent: z.enum(["SURE", "PROBABLE", "UNDECIDED", "OPPOSITION", "ABSTAIN"]).optional(),
+          currentVoteIntent: z.enum(["SURE", "PROBABLE", "OPPOSITION_INTERNAL", "OPPOSITION_PARTY", "WONT_VOTE", "UNDECIDED"]).optional(),
           notes: z.string().optional(),
         })
         .parse(req.body);
 
       const campaignId = req.user.campaignId;
       const res = await personUpdate(campaignId, params.id, body);
-      if (!res.rows[0]) throw notFound("Person not found");
-      return res.rows[0];
+      if (!res) throw notFound("Person not found");
+      return res;
     }
   );
 }
