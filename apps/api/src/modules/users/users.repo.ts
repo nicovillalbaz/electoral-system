@@ -36,3 +36,21 @@ export async function userGetById(campaignId: string, id: string) {
   );
   return res.rows[0] ?? null;
 }
+
+export async function userUpdate(
+  campaignId: string,
+  userId: string,
+  data: { isActive?: boolean; role?: string; fullName?: string }
+) {
+  // COALESCE permite que si el valor es undefined, mantenga el valor actual de la base de datos
+  const res = await query(
+    `UPDATE users
+     SET is_active = COALESCE($3, is_active),
+         role = COALESCE($4, role),
+         full_name = COALESCE($5, full_name)
+     WHERE campaign_id=$1 AND id=$2
+     RETURNING id, campaign_id, email, full_name, role, is_active`,
+    [campaignId, userId, data.isActive, data.role, data.fullName]
+  );
+  return res.rows[0];
+}

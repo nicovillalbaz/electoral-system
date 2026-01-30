@@ -2,18 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 0, 0, 0;
-  --background-end-rgb: 0, 0, 0;
+@layer base {
+  :root {
+    /* Modo Oscuro "Command Center" (Default) */
+    --background: 240 10% 3.9%;   /* #09090b - Casi negro, muy elegante */
+    --foreground: 0 0% 98%;       /* Texto blanco suave */
+    
+    --card: 240 10% 3.9%;         /* Fondo de tarjetas igual al body */
+    --card-foreground: 0 0% 98%;
+ 
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+ 
+    --primary: 0 72% 51%;         /* #DC2626 - Rojo Coloradismo (Moderno) */
+    --primary-foreground: 0 85.7% 97.3%;
+ 
+    --secondary: 240 3.7% 15.9%;  /* Elementos secundarios gris oscuro */
+    --secondary-foreground: 0 0% 98%;
+ 
+    --muted: 240 3.7% 15.9%;      /* Textos secundarios */
+    --muted-foreground: 240 5% 64.9%; /* Gris suave para subtítulos */
+ 
+    --accent: 240 3.7% 15.9%;     /* Hover effects */
+    --accent-foreground: 0 0% 98%;
+ 
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+ 
+    --border: 240 3.7% 15.9%;     /* Bordes sutiles */
+    --input: 240 3.7% 15.9%;
+    --ring: 0 72% 51%;            /* Anillo de focus color rojo */
+ 
+    --radius: 0.5rem;             /* Bordes redondeados modernos */
+  }
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Scrollbar moderna (Chrome/Safari/Edge) */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
 }
