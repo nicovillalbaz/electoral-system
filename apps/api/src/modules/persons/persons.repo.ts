@@ -5,17 +5,8 @@ export async function personsSearch(campaignId: string, q: string, limit = 50) {
   const like = `%${q}%`;
   return query(
     `SELECT 
-       p.id,
-       p.campaign_id,
-       p.current_vote_intent,
-       p.has_voted,
-       p.is_visited,
-       p.notes,
-       g.document_id,
-       g.first_name,
-       g.last_name,
-       g.party_affiliation,
-       g.address
+       p.id, p.campaign_id, p.current_vote_intent, p.has_voted, p.is_visited, p.notes,
+       g.document_id, g.first_name, g.last_name, g.party_affiliation, g.address
      FROM persons p
      JOIN global_citizens g ON p.citizen_id = g.id
      WHERE p.campaign_id = $1
@@ -29,15 +20,8 @@ export async function personsSearch(campaignId: string, q: string, limit = 50) {
 // OBTENER UNA (JOIN Global + Local)
 export async function personGet(campaignId: string, id: string) {
   return query(
-    `SELECT 
-       p.*,
-       g.document_id,
-       g.first_name,
-       g.last_name,
-       g.party_affiliation,
-       g.birthdate,
-       g.sex,
-       g.address
+    `SELECT p.*,
+       g.document_id, g.first_name, g.last_name, g.party_affiliation, g.birthdate, g.sex, g.address
      FROM persons p
      JOIN global_citizens g ON p.citizen_id = g.id
      WHERE p.campaign_id = $1 AND p.id = $2`, 
@@ -52,7 +36,6 @@ export async function personCreate(campaignId: string, data: any) {
     await client.query('BEGIN');
 
     // 1. Upsert en Global Citizens
-    // Si ya existe la CI, actualizamos nombres por si acaso, y retornamos su ID.
     const citizenRes = await client.query(
       `INSERT INTO global_citizens (document_id, first_name, last_name, party_affiliation, created_at)
        VALUES ($1, $2, $3, $4, NOW())
@@ -76,7 +59,6 @@ export async function personCreate(campaignId: string, data: any) {
 
     await client.query('COMMIT');
     
-    // Retornamos objeto combinado para el frontend
     return {
       ...personRes.rows[0],
       document_id: data.documentId,
@@ -92,29 +74,25 @@ export async function personCreate(campaignId: string, data: any) {
   }
 }
 
-// ACTUALIZAR (Separa lógica)
+// ACTUALIZAR
 export async function personUpdate(campaignId: string, id: string, patch: any) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Obtener citizen_id para saber a quién actualizar en el global
     const current = await client.query(`SELECT citizen_id FROM persons WHERE id=$1 AND campaign_id=$2`, [id, campaignId]);
     if (current.rows.length === 0) throw new Error("Person not found");
     const citizenId = current.rows[0].citizen_id;
 
-    // Actualizar Global (Nombres)
     if (patch.firstName || patch.lastName) {
       await client.query(
         `UPDATE global_citizens 
-         SET first_name = COALESCE($1, first_name),
-             last_name = COALESCE($2, last_name)
+         SET first_name = COALESCE($1, first_name), last_name = COALESCE($2, last_name)
          WHERE id = $3`,
         [patch.firstName, patch.lastName, citizenId]
       );
     }
 
-    // Actualizar Local (Campaña)
     const res = await client.query(
       `UPDATE persons
        SET current_vote_intent = COALESCE($3, current_vote_intent),
