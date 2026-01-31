@@ -1,18 +1,56 @@
 import { query, pool } from "../../db/query";
-
+// LISTAR TODO EL PADRÓN (Paginado + JOIN con Datos Reales)
+export async function personsList(campaignId: string, limit = 50, offset = 0) {
+  return query(
+    `SELECT 
+        p.id, 
+        p.current_vote_intent, 
+        p.has_voted, 
+        p.is_visited, 
+        p.notes,
+        -- Datos de Global Citizens (Super Padrón)
+        g.document_id, 
+        g.first_name, 
+        g.last_name, 
+        g.address,              -- <--- La Dirección
+        g.party_affiliation,    -- <--- El Partido (ANR/PLRA)
+        g.voting_order_number,  -- <--- El Orden
+        g.sex,
+        g.voting_table_id       -- <--- El ID de mesa (lo usaremos luego)
+      FROM persons p
+      JOIN global_citizens g ON p.citizen_id = g.id
+      WHERE p.campaign_id = $1
+      ORDER BY g.last_name ASC, g.first_name ASC
+      LIMIT $2 OFFSET $3`,
+    [campaignId, limit, offset]
+  );
+}
 // BUSCAR (JOIN Global + Local)
+// BUSCAR (Actualizado con columnas del Super Padrón)
 export async function personsSearch(campaignId: string, q: string, limit = 50) {
   const like = `%${q}%`;
   return query(
     `SELECT 
-       p.id, p.campaign_id, p.current_vote_intent, p.has_voted, p.is_visited, p.notes,
-       g.document_id, g.first_name, g.last_name, g.party_affiliation, g.address
-     FROM persons p
-     JOIN global_citizens g ON p.citizen_id = g.id
-     WHERE p.campaign_id = $1
-       AND (g.document_id ILIKE $2 OR g.first_name ILIKE $2 OR g.last_name ILIKE $2)
-     ORDER BY g.last_name, g.first_name
-     LIMIT $3`,
+        p.id, 
+        p.campaign_id, 
+        p.current_vote_intent, 
+        p.has_voted, 
+        p.is_visited, 
+        p.notes,
+        -- Mismos datos que en el Listar para que no se rompa la tabla
+        g.document_id, 
+        g.first_name, 
+        g.last_name, 
+        g.address,
+        g.party_affiliation, 
+        g.voting_order_number,
+        g.sex
+      FROM persons p
+      JOIN global_citizens g ON p.citizen_id = g.id
+      WHERE p.campaign_id = $1
+        AND (g.document_id ILIKE $2 OR g.first_name ILIKE $2 OR g.last_name ILIKE $2)
+      ORDER BY g.last_name, g.first_name
+      LIMIT $3`,
     [campaignId, like, limit]
   );
 }
