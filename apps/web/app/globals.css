@@ -4,36 +4,38 @@
 
 @layer base {
   :root {
-    /* Modo Oscuro "Command Center" (Default) */
-    --background: 240 10% 3.9%;   /* #09090b - Casi negro, muy elegante */
-    --foreground: 0 0% 98%;       /* Texto blanco suave */
+    --background: 240 10% 3.9%;   /* Fondo Oscuro (Casi negro) */
+    --foreground: 0 0% 98%;       /* Texto Blanco */
     
-    --card: 240 10% 3.9%;         /* Fondo de tarjetas igual al body */
+    /* CAMBIO CLAVE: NEUTRO TOTAL (Blanco Puro para acciones) */
+    --primary: 0 0% 98%;          
+    --primary-foreground: 240 5.9% 10%; /* Texto negro sobre botón blanco */
+    
+    /* El "Anillo" de selección en gris suave */
+    --ring: 240 4.9% 83.9%; 
+
+    /* Colores secundarios (Tarjetas, bordes) en escala de grises */
+    --card: 240 10% 3.9%;
     --card-foreground: 0 0% 98%;
- 
     --popover: 240 10% 3.9%;
     --popover-foreground: 0 0% 98%;
- 
-    --primary: 0 72% 51%;         /* #DC2626 - Rojo Coloradismo (Moderno) */
-    --primary-foreground: 0 85.7% 97.3%;
- 
-    --secondary: 240 3.7% 15.9%;  /* Elementos secundarios gris oscuro */
+    
+    --secondary: 240 3.7% 15.9%;
     --secondary-foreground: 0 0% 98%;
- 
-    --muted: 240 3.7% 15.9%;      /* Textos secundarios */
-    --muted-foreground: 240 5% 64.9%; /* Gris suave para subtítulos */
- 
-    --accent: 240 3.7% 15.9%;     /* Hover effects */
+    
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    
+    --accent: 240 3.7% 15.9%;
     --accent-foreground: 0 0% 98%;
- 
+    
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
- 
-    --border: 240 3.7% 15.9%;     /* Bordes sutiles */
+    
+    --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
-    --ring: 0 72% 51%;            /* Anillo de focus color rojo */
- 
-    --radius: 0.5rem;             /* Bordes redondeados modernos */
+    
+    --radius: 0.75rem;
   }
 }
 

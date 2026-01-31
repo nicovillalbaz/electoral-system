@@ -1,4 +1,4 @@
-"use client"; // <--- Importante para usar useEffect
+"use client";
 
 import Sidebar from "../../components/sidebar";
 import { useEffect } from "react";
@@ -12,6 +12,7 @@ export default function DashboardLayout({
   const router = useRouter();
 
   useEffect(() => {
+    // --- LÓGICA DE PROTECCIÓN (NO BORRAR) ---
     const userStr = localStorage.getItem("user");
     if (!userStr) {
       router.push("/login");
@@ -20,7 +21,7 @@ export default function DashboardLayout({
     
     try {
       const user = JSON.parse(userStr);
-      // Si es Operador o Voluntario, FUERA DEL DASHBOARD
+      // Si es Operador o Voluntario, no deben ver el Dashboard estratégico
       if (["OPERATOR", "VOLUNTEER"].includes(user.role)) {
         router.push("/operator/checkin");
       }
@@ -32,10 +33,19 @@ export default function DashboardLayout({
   }, []);
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 flex">
+    // CAMBIO DE DISEÑO: Usamos las variables semánticas (background/foreground)
+    <div className="min-h-screen bg-background text-foreground flex font-sans antialiased selection:bg-red-500/30">
       <Sidebar />
-      <main className="flex-1 md:ml-64 p-8 overflow-y-auto h-screen">
-        <div className="max-w-7xl mx-auto">{children}</div>
+      
+      {/* AJUSTES DE DISEÑO: 
+         - md:ml-72: Porque ensanchamos el Sidebar para que se vea más moderno.
+         - bg-gradient: Un fondo sutil para que no sea plano.
+         - animate-in: Efecto suave al cargar.
+      */}
+      <main className="flex-1 md:ml-72 p-8 lg:p-12 overflow-y-auto h-screen bg-gradient-to-br from-background via-background to-zinc-950">
+        <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 slide-in-from-bottom-4">
+          {children}
+        </div>
       </main>
     </div>
   );
