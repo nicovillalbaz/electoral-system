@@ -4,10 +4,10 @@ import jwt from "@fastify/jwt";
 import swagger from "@fastify/swagger";
 import swaggerUI from "@fastify/swagger-ui";
 import { env } from "./config/env";
-import { authPlugin } from "./common/middleware/auth"; // Importamos el plugin arreglado
+import { authPlugin } from "./common/middleware/auth"; 
 import { HttpError } from "./common/http/errors";
 
-// routes (Tus rutas originales)
+// Routes (Tus rutas originales intactas)
 import { authRoutes } from "./modules/auth/auth.routes";
 import { campaignsRoutes } from "./modules/campaigns/campaigns.routes";
 import { usersRoutes } from "./modules/users/users.routes";
@@ -20,16 +20,19 @@ import { tagsRoutes } from "./modules/tags/tags.routes";
 import { listsRoutes } from "./modules/lists/lists.routes";
 import { contactsRoutes } from "./modules/contacts/contacts.routes";
 import { eventsRoutes } from "./modules/events/events.routes";
-import { dashboardRoutes } from "./modules/dashboard/dashboard.routes"; // Agregué el dashboard por si faltaba
+import { dashboardRoutes } from "./modules/dashboard/dashboard.routes";
 
 // Hacemos la función ASYNC para garantizar el orden de carga
 export async function buildApp() {
   const app = Fastify({ logger: true });
 
-  // --- 1. PLUGINS GLOBALES ---
+  // --- 1. PLUGINS GLOBALES (AQUÍ ESTÁ LA CORRECCIÓN) ---
   await app.register(cors, {
-    origin: true,
+    origin: true, // Permite desarrollo local sin problemas
     credentials: true,
+    // AGREGAMOS ESTO PARA QUE FUNCIONE EL 'PATCH' (GUARDAR)
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   });
 
   await app.register(jwt, {
@@ -45,8 +48,7 @@ export async function buildApp() {
 
   await app.register(swaggerUI, { routePrefix: "/docs" });
 
-  // --- 2. MIDDLEWARE DE AUTH (CRÍTICO: ANTES DE LAS RUTAS) ---
-  // Esto inyecta 'requireAuth' en la instancia de app
+  // --- 2. MIDDLEWARE DE AUTH ---
   await app.register(authPlugin);
 
   // --- 3. MANEJADOR DE ERRORES ---
@@ -64,7 +66,6 @@ export async function buildApp() {
   app.get("/health", async () => ({ ok: true }));
 
   // --- 4. REGISTRO DE RUTAS ---
-  // Como usamos 'await' arriba, 'requireAuth' ya existe cuando estas rutas cargan
   await app.register(authRoutes, { prefix: "/auth" });
   await app.register(campaignsRoutes, { prefix: "/campaigns" });
   await app.register(usersRoutes, { prefix: "/users" });
