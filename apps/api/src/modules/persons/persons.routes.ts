@@ -9,7 +9,11 @@ import {
   personUpdate,
   personsGetUniqueAddresses,
 } from "./persons.repo";
-
+import {
+  VOTE_INTENT_OPTIONS,
+  CAMPAIGN_STATUS_OPTIONS,
+  TRANSPORT_STATUS_OPTIONS,
+} from "../../common/constants/campaign";
 export async function personsRoutes(app: FastifyInstance) {
   // --- 1. GET LISTADO (Con Paginación, Filtros y Orden) ---
   // --- NUEVO: LISTA DE DIRECCIONES PARA EL FILTRO ---
@@ -119,7 +123,6 @@ export async function personsRoutes(app: FastifyInstance) {
     async (req: any) => {
       const params = z.object({ id: z.string().uuid() }).parse(req.params);
 
-      // AHORA SÍ ACEPTAMOS TODOS LOS CAMPOS
       const body = z
         .object({
           firstName: z.string().optional(),
@@ -127,33 +130,43 @@ export async function personsRoutes(app: FastifyInstance) {
           phoneNumber: z.string().optional(),
           address: z.string().optional(),
 
-          // Datos Electorales
           department: z.string().optional(),
           district: z.string().optional(),
           pollingPlace: z.string().optional(),
-          tableNumber: z.coerce.number().optional(), // Coerce convierte "10" (string) a 10 (numero)
+          tableNumber: z.coerce.number().optional(),
           orderNumber: z.coerce.number().optional(),
           partyAffiliation: z.string().optional(),
 
-          // Datos Campaña
+          // VALIDACIÓN CORRECTA:
+          // Aceptamos: Uno de los valores válidos OR un string vacío OR null OR undefined
           currentVoteIntent: z
-            .enum([
-              "SURE",
-              "PROBABLE",
-              "OPPOSITION",
-              "OPPOSITION_INTERNAL",
-              "OPPOSITION_PARTY",
-              "WONT_VOTE",
-              "UNDECIDED",
-            ])
+            .enum(VOTE_INTENT_OPTIONS)
+            .or(z.literal(""))
+            .nullable()
             .optional(),
+
           notes: z.string().optional(),
+
+          // Nuevos Estados con la misma lógica robusta
+          campaignStatus: z
+            .enum(CAMPAIGN_STATUS_OPTIONS)
+            .or(z.literal(""))
+            .nullable()
+            .optional(),
+
+          needsTransport: z.boolean().optional(),
+
+          transportStatus: z
+            .enum(TRANSPORT_STATUS_OPTIONS)
+            .or(z.literal(""))
+            .nullable()
+            .optional(),
         })
         .parse(req.body);
 
       const campaignId = req.user.campaignId;
 
-      // Pasamos el userId para el historial
+      // Llamamos al repo. El repo se encargará de convertir "" en null.
       const res = await personUpdate(
         campaignId,
         params.id,

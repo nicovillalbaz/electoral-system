@@ -12,16 +12,22 @@ export async function personsList(
     page?: number;
     limit?: number;
     sortBy?: string;
-    sortDir?: 'ASC' | 'DESC';
+    sortDir?: "ASC" | "DESC";
     address?: string;
     party?: string;
     voteIntent?: string;
     votedStatus?: string;
     visitedStatus?: string;
     tagId?: string;
-  }
+  },
 ) {
-  const { q = "", page = 1, limit = 50, sortBy = "last_name", sortDir = "ASC" } = params;
+  const {
+    q = "",
+    page = 1,
+    limit = 50,
+    sortBy = "last_name",
+    sortDir = "ASC",
+  } = params;
   const offset = (page - 1) * limit;
   const like = `%${q}%`;
 
@@ -31,65 +37,81 @@ export async function personsList(
 
   // 1. Buscador General
   if (q) {
-    conditions.push(`(g.document_id ILIKE $${paramIndex} OR g.first_name ILIKE $${paramIndex} OR g.last_name ILIKE $${paramIndex})`);
+    conditions.push(
+      `(g.document_id ILIKE $${paramIndex} OR g.first_name ILIKE $${paramIndex} OR g.last_name ILIKE $${paramIndex})`,
+    );
     queryParams.push(like);
     paramIndex++;
   }
 
   // 2. FILTRO DE ZONA INTELIGENTE
   if (params.address) {
-    if (params.address === 'B° CRISTÓBAL COLÓN') {
-        conditions.push(`g.address ILIKE '%COLON%'`);
-    } else if (params.address === 'B° CENTRO') {
-        conditions.push(`(g.address ILIKE '%CENTRO%' OR g.address ILIKE '%CASCO%')`);
-    } else if (params.address === 'B° YBYHANGUY 1') {
-        conditions.push(`(g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%') AND (g.address ILIKE '%1%' OR g.address ILIKE '%I%')`);
-    } else if (params.address === 'B° YBYHANGUY 2') {
-        conditions.push(`(g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%') AND (g.address ILIKE '%2%' OR g.address ILIKE '%II%')`);
+    if (params.address === "B° CRISTÓBAL COLÓN") {
+      conditions.push(`g.address ILIKE '%COLON%'`);
+    } else if (params.address === "B° CENTRO") {
+      conditions.push(
+        `(g.address ILIKE '%CENTRO%' OR g.address ILIKE '%CASCO%')`,
+      );
+    } else if (params.address === "B° YBYHANGUY 1") {
+      conditions.push(
+        `(g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%') AND (g.address ILIKE '%1%' OR g.address ILIKE '%I%')`,
+      );
+    } else if (params.address === "B° YBYHANGUY 2") {
+      conditions.push(
+        `(g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%') AND (g.address ILIKE '%2%' OR g.address ILIKE '%II%')`,
+      );
     } else if (params.address === "B° PIRAYU'I") {
-        conditions.push(`g.address ILIKE '%PIRAYU%'`);
-    } else if (params.address === 'B° HERIBERTA MATIAUDA') {
-        conditions.push(`g.address ILIKE '%MATIAUDA%'`);
-    } else if (params.address === 'B° CIERVO CUA') {
-        conditions.push(`g.address ILIKE '%CIERVO%'`);
-    } else if (params.address === 'B° SANTA LIBRADA') {
-        conditions.push(`g.address ILIKE '%LIBRADA%'`);
-    } else if (params.address === 'B° SANTA ROSALINA') {
-        conditions.push(`(g.address ILIKE '%ROSALINA%' OR g.address ILIKE '%ROSA DE LIMA%')`);
-    } else if (params.address === 'B° PUERTA DEL LAGO') {
-        conditions.push(`(g.address ILIKE '%PUERTA%' OR g.address ILIKE '%LAGO%')`);
+      conditions.push(`g.address ILIKE '%PIRAYU%'`);
+    } else if (params.address === "B° HERIBERTA MATIAUDA") {
+      conditions.push(`g.address ILIKE '%MATIAUDA%'`);
+    } else if (params.address === "B° CIERVO CUA") {
+      conditions.push(`g.address ILIKE '%CIERVO%'`);
+    } else if (params.address === "B° SANTA LIBRADA") {
+      conditions.push(`g.address ILIKE '%LIBRADA%'`);
+    } else if (params.address === "B° SANTA ROSALINA") {
+      conditions.push(
+        `(g.address ILIKE '%ROSALINA%' OR g.address ILIKE '%ROSA DE LIMA%')`,
+      );
+    } else if (params.address === "B° PUERTA DEL LAGO") {
+      conditions.push(
+        `(g.address ILIKE '%PUERTA%' OR g.address ILIKE '%LAGO%')`,
+      );
     } else {
-        conditions.push(`g.address = $${paramIndex}`);
-        queryParams.push(params.address);
-        paramIndex++;
+      conditions.push(`g.address = $${paramIndex}`);
+      queryParams.push(params.address);
+      paramIndex++;
     }
   }
 
   // 3. Filtro Partido
-  if (params.party && params.party !== 'TODOS') {
+  if (params.party && params.party !== "TODOS") {
     conditions.push(`g.party_affiliation = $${paramIndex}`);
     queryParams.push(params.party);
     paramIndex++;
   }
 
   // 4. Filtro Intención
-  if (params.voteIntent && params.voteIntent !== 'ALL') {
+  if (params.voteIntent && params.voteIntent !== "ALL") {
     conditions.push(`p.current_vote_intent = $${paramIndex}`);
     queryParams.push(params.voteIntent);
     paramIndex++;
   }
 
   // 5. Filtro Ya Votó
-  if (params.votedStatus === 'VOTED') conditions.push(`p.has_voted = true`);
-  if (params.votedStatus === 'PENDING') conditions.push(`p.has_voted = false`);
+  if (params.votedStatus === "VOTED") conditions.push(`p.has_voted = true`);
+  if (params.votedStatus === "PENDING") conditions.push(`p.has_voted = false`);
 
   // 6. Filtro Visitado
-  if (params.visitedStatus === 'VISITED') conditions.push(`p.is_visited = true`);
-  if (params.visitedStatus === 'NOT_VISITED') conditions.push(`p.is_visited = false`);
+  if (params.visitedStatus === "VISITED")
+    conditions.push(`p.is_visited = true`);
+  if (params.visitedStatus === "NOT_VISITED")
+    conditions.push(`p.is_visited = false`);
 
   // 7. Filtro Etiqueta
   if (params.tagId) {
-    conditions.push(`EXISTS (SELECT 1 FROM person_tags pt WHERE pt.person_id = p.id AND pt.tag_id = $${paramIndex})`);
+    conditions.push(
+      `EXISTS (SELECT 1 FROM person_tags pt WHERE pt.person_id = p.id AND pt.tag_id = $${paramIndex})`,
+    );
     queryParams.push(params.tagId);
     paramIndex++;
   }
@@ -97,20 +119,48 @@ export async function personsList(
   // Ordenamiento
   let orderByClause = "g.last_name";
   switch (sortBy) {
-    case "document_id": orderByClause = `CAST(NULLIF(g.document_id, '') AS BIGINT)`; break;
-    case "voting_order_number": orderByClause = "g.voting_order_number"; break;
-    case "address": orderByClause = "g.address"; break;
-    case "party_affiliation": orderByClause = "g.party_affiliation"; break;
-    case "current_vote_intent": orderByClause = "p.current_vote_intent"; break;
-    default: orderByClause = "g.last_name";
+    case "document_id":
+      orderByClause = `CAST(NULLIF(g.document_id, '') AS BIGINT)`;
+      break;
+    case "voting_order_number":
+      orderByClause = "g.voting_order_number";
+      break;
+    case "address":
+      orderByClause = "g.address";
+      break;
+    case "party_affiliation":
+      orderByClause = "g.party_affiliation";
+      break;
+    case "current_vote_intent":
+      orderByClause = "p.current_vote_intent";
+      break;
+    default:
+      orderByClause = "g.last_name";
   }
 
   // --- CONSULTA FINAL CON COLUMNAS DE UBICACIÓN AGREGADAS ---
   const sql = `
     SELECT 
-        p.id, p.current_vote_intent, p.has_voted, p.is_visited, p.notes,
-        g.document_id, g.first_name, g.last_name, g.address, g.party_affiliation, 
-        g.voting_order_number, g.phone_number, g.voting_table_number,
+        p.id, 
+        p.current_vote_intent, 
+        p.has_voted, 
+        p.is_visited, 
+        p.notes,
+        
+        -- 👇 ¡AGREGAR ESTAS 3 LÍNEAS! 👇
+        p.campaign_status,
+        p.needs_transport,
+        p.transport_status,
+        -- 👆 ------------------------ 👆
+
+        g.document_id, 
+        g.first_name, 
+        g.last_name, 
+        g.address, 
+        g.party_affiliation, 
+        g.voting_order_number, 
+        g.phone_number, 
+        g.voting_table_number,
         g.location_department, 
         g.location_district, 
         g.location_place,
@@ -128,7 +178,7 @@ export async function personsList(
 
   return {
     data: res.rows,
-    total: res.rows.length > 0 ? Number(res.rows[0].full_count) : 0
+    total: res.rows.length > 0 ? Number(res.rows[0].full_count) : 0,
   };
 }
 
@@ -149,7 +199,7 @@ export async function personGet(campaignId: string, id: string) {
      FROM persons p 
      JOIN global_citizens g ON p.citizen_id = g.id 
      WHERE p.campaign_id = $1 AND p.id = $2`,
-    [campaignId, id]
+    [campaignId, id],
   );
 }
 
@@ -157,7 +207,7 @@ export async function personGet(campaignId: string, id: string) {
 export async function personCreate(campaignId: string, data: any) {
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // 1. Upsert en Global Citizens
     const citizenRes = await client.query(
@@ -174,17 +224,17 @@ export async function personCreate(campaignId: string, data: any) {
          updated_at = NOW()
        RETURNING id`,
       [
-        data.documentId, 
-        data.firstName, 
-        data.lastName, 
-        data.partyAffiliation || 'ANR', // Por defecto según tu esquema
+        data.documentId,
+        data.firstName,
+        data.lastName,
+        data.partyAffiliation || "ANR", // Por defecto según tu esquema
         data.phoneNumber, // <--- NUEVO
-        data.department,  // desc_dep
-        data.district,    // desc_dis
-        data.pollingPlace,// desc_locanr
+        data.department, // desc_dep
+        data.district, // desc_dis
+        data.pollingPlace, // desc_locanr
         data.tableNumber, // mesa
-        data.orderNumber  // orden
-      ] 
+        data.orderNumber, // orden
+      ],
     );
     const citizenId = citizenRes.rows[0].id;
 
@@ -194,20 +244,24 @@ export async function personCreate(campaignId: string, data: any) {
        VALUES ($1, $2, $3, $4, NOW())
        ON CONFLICT (campaign_id, citizen_id) DO UPDATE SET updated_at = NOW()
        RETURNING id, campaign_id, current_vote_intent, notes`,
-      [campaignId, citizenId, data.currentVoteIntent ?? 'UNDECIDED', data.notes ?? null]
+      [
+        campaignId,
+        citizenId,
+        data.currentVoteIntent ?? "UNDECIDED",
+        data.notes ?? null,
+      ],
     );
 
-    await client.query('COMMIT');
-    
+    await client.query("COMMIT");
+
     return {
       ...personRes.rows[0],
       document_id: data.documentId,
       first_name: data.firstName,
-      last_name: data.lastName
+      last_name: data.lastName,
     };
-
   } catch (e) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw e;
   } finally {
     client.release();
@@ -215,89 +269,121 @@ export async function personCreate(campaignId: string, data: any) {
 }
 
 // ACTUALIZAR
-export async function personUpdate(campaignId: string, personId: string, patch: any, actorUserId?: string) {
+// ... imports ...
+const sanitize = (val: any) => (val === "" || val === undefined ? null : val);
+export async function personUpdate(
+  campaignId: string,
+  personId: string,
+  patch: any,
+  actorUserId?: string,
+) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // 1. Obtener datos actuales (Snapshot "Antes")
+    // 1. Obtener datos actuales (Snapshot para el historial)
     const currentRes = await client.query(
-        `SELECT p.current_vote_intent, p.notes, 
-                g.phone_number, g.address, g.location_place, g.voting_table_number
+      `SELECT p.current_vote_intent, p.notes, p.campaign_status, 
+                p.needs_transport, p.transport_status,
+                g.phone_number, g.address, g.location_place 
          FROM persons p
          JOIN global_citizens g ON p.citizen_id = g.id
-         WHERE p.id = $1`, 
-        [personId]
+         WHERE p.id = $1`,
+      [personId],
     );
-    
-    // PROTECCIÓN: Si no existe la persona, retornamos null (Rutas lanzará 404) en vez de explotar
+
     if (currentRes.rows.length === 0) {
-        await client.query("ROLLBACK");
-        return null; 
+      await client.query("ROLLBACK");
+      return null;
     }
-    
     const before = currentRes.rows[0];
 
-    // 2. Actualizar Global Citizens
+    // 2. Actualizar Global Citizens (Datos Personales)
     if (
-      patch.firstName || patch.lastName || patch.phoneNumber || patch.address ||
-      patch.department || patch.district || patch.pollingPlace || 
-      patch.tableNumber !== undefined || patch.orderNumber !== undefined || patch.partyAffiliation
+      patch.firstName ||
+      patch.lastName ||
+      patch.phoneNumber ||
+      patch.address ||
+      patch.pollingPlace
     ) {
       await client.query(
         `UPDATE global_citizens 
-         SET first_name = COALESCE($1, first_name), 
-             last_name = COALESCE($2, last_name),
-             phone_number = COALESCE($3, phone_number),
-             address = COALESCE($4, address),
-             location_department = COALESCE($5, location_department),
-             location_district = COALESCE($6, location_district),
-             location_place = COALESCE($7, location_place),
-             voting_table_number = COALESCE($8, voting_table_number),
-             voting_order_number = COALESCE($9, voting_order_number),
-             party_affiliation = COALESCE($10, party_affiliation),
+         SET phone_number = COALESCE($1, phone_number),
+             address = COALESCE($2, address),
              updated_at = NOW()
          FROM persons p
-         WHERE global_citizens.id = p.citizen_id 
-           AND p.id = $11 
-           AND p.campaign_id = $12`,
-        [
-          patch.firstName, patch.lastName, patch.phoneNumber, patch.address,
-          patch.department, patch.district, patch.pollingPlace, 
-          patch.tableNumber, patch.orderNumber, patch.partyAffiliation,
-          personId, campaignId
-        ]
+         WHERE global_citizens.id = p.citizen_id AND p.id = $3`,
+        [patch.phoneNumber, patch.address, personId],
       );
     }
 
-    // 3. Actualizar Persons
-    if (patch.currentVoteIntent || patch.notes) {
+    // 3. Actualizar Persons (Datos Campaña)
+    // Aquí aplicamos la sanitización profesional
+    if (
+      patch.currentVoteIntent !== undefined ||
+      patch.notes !== undefined ||
+      patch.campaignStatus !== undefined ||
+      patch.transportStatus !== undefined ||
+      patch.needsTransport !== undefined
+    ) {
       await client.query(
         `UPDATE persons 
          SET current_vote_intent = COALESCE($1, current_vote_intent),
              notes = COALESCE($2, notes),
+             campaign_status = COALESCE($3, campaign_status),
+             needs_transport = COALESCE($4, needs_transport),
+             transport_status = COALESCE($5, transport_status),
              updated_at = NOW()
-         WHERE id = $3 AND campaign_id = $4`,
-        [patch.currentVoteIntent, patch.notes, personId, campaignId]
+         WHERE id = $6 AND campaign_id = $7`,
+        [
+          sanitize(patch.currentVoteIntent), // Convierte "" a null
+          patch.notes,
+          sanitize(patch.campaignStatus), // Convierte "" a null
+          patch.needsTransport,
+          sanitize(patch.transportStatus), // Convierte "" a null
+          personId,
+          campaignId,
+        ],
       );
     }
 
-    // 4. Historial de Cambios
+    // 4. Historial (Log de cambios preciso)
     const changes: string[] = [];
-    if (patch.phoneNumber && patch.phoneNumber !== before.phone_number) changes.push(`Teléfono: ${before.phone_number || '-'} -> ${patch.phoneNumber}`);
-    if (patch.address && patch.address !== before.address) changes.push(`Dirección modificada`);
-    if (patch.currentVoteIntent && patch.currentVoteIntent !== before.current_vote_intent) changes.push(`Intención: ${before.current_vote_intent} -> ${patch.currentVoteIntent}`);
-    if (patch.pollingPlace && patch.pollingPlace !== before.location_place) changes.push(`Local actualizado`);
-    if (patch.notes && patch.notes !== before.notes) changes.push(`Nota editada`);
+
+    // Comparamos valores sanitizados para no generar logs falsos
+    const newVote = sanitize(patch.currentVoteIntent);
+    const newStatus = sanitize(patch.campaignStatus);
+
+    if (patch.phoneNumber && patch.phoneNumber !== before.phone_number)
+      changes.push(`Teléfono actualizado`);
+    if (patch.address && patch.address !== before.address)
+      changes.push(`Barrio actualizado`);
+
+    if (newVote !== undefined && newVote !== before.current_vote_intent) {
+      changes.push(`Intención: ${newVote || "Indeciso"}`);
+    }
+
+    if (newStatus !== undefined && newStatus !== before.campaign_status) {
+      changes.push(`Estado: ${newStatus || "Sin visitar"}`);
+    }
+
+    if (
+      patch.needsTransport !== undefined &&
+      patch.needsTransport !== before.needs_transport
+    ) {
+      changes.push(
+        patch.needsTransport ? "Solicitó transporte" : "Canceló transporte",
+      );
+    }
 
     if (changes.length > 0 && actorUserId) {
-        await logEvent({
-            campaignId,
-            eventType: 'PERSON_UPDATED',
-            actorUserId,
-            personId,
-            payload: { details: changes.join(', ') }
-        });
+      await logEvent({
+        campaignId,
+        eventType: "PERSON_UPDATED",
+        actorUserId,
+        personId,
+        payload: { details: changes.join(", ") },
+      });
     }
 
     await client.query("COMMIT");
@@ -345,7 +431,7 @@ export async function personsGetUniqueAddresses(campaignId: string) {
   `;
 
   const res = await query(sql, [campaignId]);
-  
+
   // Devolvemos la lista única limpia
-  return res.rows.map(r => r.clean_zone).filter(z => z !== 'OTRAS ZONAS');
+  return res.rows.map((r) => r.clean_zone).filter((z) => z !== "OTRAS ZONAS");
 }

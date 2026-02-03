@@ -5,9 +5,9 @@ import { X, MapPin, Target, CheckCircle, RotateCcw, Filter, Tag } from "lucide-r
 interface FilterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onApply: (filters: any) => void;
-  availableAddresses: string[]; // Lista real de direcciones
-  availableTags: any[];         // <--- NUEVO: Lista real de etiquetas (id, name, color)
+  onApply: (filters: any) => void; // <--- ESTA ES LA PROPIEDAD QUE FALTABA
+  availableAddresses: string[];
+  availableTags: any[];
 }
 
 export default function FilterModal({ isOpen, onClose, onApply, availableAddresses, availableTags }: FilterModalProps) {

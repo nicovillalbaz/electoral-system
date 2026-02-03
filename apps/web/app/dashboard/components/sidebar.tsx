@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
   LayoutDashboard, 
-  Users, 
+  Users, List, BarChart3,
   MapPin, 
   ShieldAlert, 
   LogOut, 
@@ -14,6 +14,7 @@ import {
 const MENU_ITEMS = [
   { name: 'Tablero de Comando', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Padrón & Votantes', href: '/dashboard/persons', icon: Users },
+  { name: 'Listas Inteligentes', icon: List, href: '/dashboard/lists' },
   { name: 'Puestos (PC)', href: '/dashboard/stations', icon: MapPin },
   { name: 'Equipo & Accesos', href: '/dashboard/users', icon: UserCog },
   { name: 'Auditoría', href: '/dashboard/audit', icon: ShieldAlert },

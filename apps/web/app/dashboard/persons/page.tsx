@@ -7,12 +7,26 @@ import {
   ArrowUp, ArrowDown, Eye, SlidersHorizontal, 
   ChevronLeft, ChevronRight 
 } from "lucide-react";
-
+import { useSearchParams } from 'next/navigation'; // Importa esto
 // AQUÍ ESTÁ LA MAGIA: Importamos los componentes que acabas de crear
 import PersonModal from "./components/PersonModal";
 import FilterModal from "./components/FilterModal";
 
 export default function PersonsPage() {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    // Si la URL trae filtros (ej: vinimos de una Lista Inteligente)
+    const filtersFromUrl: any = {};
+    searchParams.forEach((value, key) => {
+        if (key !== 'page' && key !== 'limit' && key !== 'q' && key !== 'listName') {
+            filtersFromUrl[key] = value;
+        }
+    });
+
+    if (Object.keys(filtersFromUrl).length > 0) {
+        setActiveFilters(filtersFromUrl);
+    }
+}, [searchParams]);
   // --- ESTADOS DE DATOS ---
   const [search, setSearch] = useState("");
   const [query] = useDebounce(search, 500);

@@ -1,36 +1,45 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireRole } from "../../common/middleware/role";
-import { listCreate, listAll, listAddMember, listRemoveMember, listMembers } from "./lists.repo";
-import { logEvent } from "../events/events.repo";
+import { listCreate, listsGetAll, listDelete, listUpdate, listGet } from "./lists.repo";
 
 export async function listsRoutes(app: FastifyInstance) {
-  app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => listAll(req.user.campaignId));
-
-  app.post("/", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR"])] }, async (req: any) => {
-    const body = z.object({ name: z.string().min(2), description: z.string().optional() }).parse(req.body);
-    const row = await listCreate(req.user.campaignId, body.name, body.description ?? null, req.user.userId);
-    await logEvent({ campaignId: req.user.campaignId, eventType: "LIST_CREATED", actorUserId: req.user.userId, payload: { listId: row.id } });
-    return row;
+  
+  // GET TODAS
+  app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
+    return listsGetAll(req.user.campaignId);
   });
 
-  app.get("/:listId/members", { preHandler: [app.requireAuth] }, async (req: any) => {
-    const p = z.object({ listId: z.string().uuid() }).parse(req.params);
-    const q = z.object({ limit: z.coerce.number().min(1).max(1000).optional() }).parse(req.query);
-    return listMembers(req.user.campaignId, p.listId, q.limit ?? 200);
+  // POST CREAR
+  app.post("/", { preHandler: [app.requireAuth] }, async (req: any) => {
+    const body = z.object({
+        name: z.string(),
+        description: z.string().optional(),
+        icon: z.string().default("list"),
+        // CORRECCIÓN AQUÍ: Definimos explícitamente clave string y valor any
+        filters: z.record(z.string(), z.any()), 
+        isFavorite: z.boolean().default(false)
+    }).parse(req.body);
+    
+    return listCreate(req.user.campaignId, body);
   });
 
-  app.post("/add-member", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR","OPERATOR","VOLUNTEER","STATION_MANAGER"])] }, async (req: any) => {
-    const body = z.object({ listId: z.string().uuid(), personId: z.string().uuid() }).parse(req.body);
-    const row = await listAddMember(req.user.campaignId, body.listId, body.personId, req.user.userId);
-    await logEvent({ campaignId: req.user.campaignId, eventType: "LIST_UPDATED", actorUserId: req.user.userId, personId: body.personId, payload: { listId: body.listId, op: "add" } });
-    return row ?? { ok: true };
+  // DELETE
+  app.delete("/:id", { preHandler: [app.requireAuth] }, async (req: any) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+      return listDelete(req.user.campaignId, id);
   });
 
-  app.post("/remove-member", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR","OPERATOR","VOLUNTEER","STATION_MANAGER"])] }, async (req: any) => {
-    const body = z.object({ listId: z.string().uuid(), personId: z.string().uuid() }).parse(req.body);
-    await listRemoveMember(req.user.campaignId, body.listId, body.personId);
-    await logEvent({ campaignId: req.user.campaignId, eventType: "LIST_UPDATED", actorUserId: req.user.userId, personId: body.personId, payload: { listId: body.listId, op: "remove" } });
-    return { ok: true };
+  // PATCH
+  app.patch("/:id", { preHandler: [app.requireAuth] }, async (req: any) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+      const body = z.object({
+          name: z.string().optional(),
+          description: z.string().optional(),
+          icon: z.string().optional(),
+          // CORRECCIÓN AQUÍ TAMBIÉN
+          filters: z.record(z.string(), z.any()).optional(),
+          isFavorite: z.boolean().optional()
+      }).parse(req.body);
+      return listUpdate(req.user.campaignId, id, body);
   });
 }
