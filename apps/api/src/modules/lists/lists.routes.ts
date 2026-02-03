@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { listCreate, listsGetAll, listDelete, listUpdate, listGet } from "./lists.repo";
+import { listCreate, listsGetAll, listDelete, listUpdate, listGetMembers } from "./lists.repo";
 
 export async function listsRoutes(app: FastifyInstance) {
   
@@ -42,4 +42,22 @@ export async function listsRoutes(app: FastifyInstance) {
       }).parse(req.body);
       return listUpdate(req.user.campaignId, id, body);
   });
+  app.get("/:id/members", { preHandler: [app.requireAuth] }, async (req: any) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    
+    // Paginación simple
+    const querySchema = z.object({
+        page: z.coerce.number().default(1),
+        limit: z.coerce.number().default(50)
+    });
+    const { page, limit } = querySchema.parse(req.query);
+    const offset = (page - 1) * limit;
+
+    const result = await listGetMembers(req.user.campaignId, id, limit, offset);
+    
+    if (!result) throw { statusCode: 404, message: "Lista no encontrada" };
+    
+    return result;
+  });
+
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react"; // <--- Agregamos useRef
 import {
   X,
   Save,
@@ -10,9 +10,8 @@ import {
   History,
   Tag,
   Trash2,
-  Calendar,
   Clock,
-  Car, // Nuevo icono para logística
+  Car,
 } from "lucide-react";
 import api from "../../../../lib/api";
 
@@ -36,18 +35,15 @@ export default function PersonModal({
   const isEditing = !!personToEdit;
   const [activeTab, setActiveTab] = useState<"details" | "history">("details");
 
-  // ESTADOS NUEVOS PARA CREAR ETIQUETAS
+  // ESTADOS
   const [localTags, setLocalTags] = useState<any[]>(availableTags);
   const [newTagInput, setNewTagInput] = useState("");
-
-  // ESTADOS PARA ETIQUETAS Y EVENTOS
   const [assignedTags, setAssignedTags] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // CONSTANTES DE CAMPAÑA
-  const CAMPAIGN_DEPT = "CORDILLERA";
-  const CAMPAIGN_DIST = "SAN BERNARDINO";
+  // REFERENCIA PARA EVITAR BUCLE INFINITO
+  const prevTagsRef = useRef<string>("");
 
   const [formData, setFormData] = useState({
     phoneNumber: "",
@@ -55,14 +51,18 @@ export default function PersonModal({
     currentVoteIntent: "UNDECIDED",
     campaignStatus: "NOT_VISITED",
     notes: "",
-    // LOGÍSTICA DÍA D (NUEVOS CAMPOS)
     needsTransport: false,
     transportStatus: "PENDING",
   });
 
-  // Actualizar lista local si llegan nuevas props
+  // --- SOLUCIÓN DEL BUCLE INFINITO ---
+  // Solo actualizamos localTags si el CONTENIDO del array cambió realmente.
   useEffect(() => {
-    setLocalTags(availableTags);
+    const tagsString = JSON.stringify(availableTags);
+    if (prevTagsRef.current !== tagsString) {
+      setLocalTags(availableTags);
+      prevTagsRef.current = tagsString;
+    }
   }, [availableTags]);
 
   // CARGAR DATOS AL ABRIR
@@ -70,6 +70,7 @@ export default function PersonModal({
     if (isOpen) {
       setActiveTab("details");
 
+      // Limpiamos o cargamos según corresponda
       if (personToEdit) {
         setFormData({
           phoneNumber: personToEdit.phone_number || "",
@@ -77,14 +78,15 @@ export default function PersonModal({
           currentVoteIntent: personToEdit.current_vote_intent || "UNDECIDED",
           campaignStatus: personToEdit.campaign_status || "NOT_VISITED",
           notes: personToEdit.notes || "",
-          // Cargar datos de logística si existen
           needsTransport: personToEdit.needs_transport || false,
           transportStatus: personToEdit.transport_status || "PENDING",
         });
 
+        // Fetchs internos
         fetchTags(personToEdit.id);
         fetchHistory(personToEdit.id);
       } else {
+        // Reset para nuevo
         setFormData({
           phoneNumber: "",
           address: "",
@@ -98,15 +100,15 @@ export default function PersonModal({
         setHistory([]);
       }
     }
-  }, [isOpen, personToEdit]);
+  }, [isOpen, personToEdit]); // React controla bien estas dependencias simples
 
-  // --- FUNCIONES DE CARGA ---
+  // --- API CALLS ---
   const fetchTags = async (personId: string) => {
     try {
       const res = await api.get(`/tags/person/${personId}`);
       setAssignedTags(res.data);
     } catch (e) {
-      console.error("Error cargando etiquetas", e);
+      console.error(e);
     }
   };
 
@@ -116,13 +118,13 @@ export default function PersonModal({
       const res = await api.get(`/events?personId=${personId}&limit=50`);
       setHistory(res.data);
     } catch (e) {
-      console.error("Error historial", e);
+      console.error(e);
     } finally {
       setLoadingHistory(false);
     }
   };
 
-  // --- MANEJO DE ETIQUETAS ---
+  // --- HANDLERS ---
   const handleAssignTag = async (tagId: string) => {
     if (!tagId || !personToEdit) return;
     try {
@@ -130,7 +132,7 @@ export default function PersonModal({
       fetchTags(personToEdit.id);
       setTimeout(() => fetchHistory(personToEdit.id), 500);
     } catch (e) {
-      alert("Error al asignar etiqueta");
+      alert("Error al asignar");
     }
   };
 
@@ -140,7 +142,7 @@ export default function PersonModal({
       await api.post("/tags/remove", { personId: personToEdit.id, tagId });
       fetchTags(personToEdit.id);
     } catch (e) {
-      alert("Error al quitar etiqueta");
+      alert("Error al quitar");
     }
   };
 
@@ -152,33 +154,31 @@ export default function PersonModal({
         color: "#3b82f6",
       });
       const newTag = res.data;
-      setLocalTags([...localTags, newTag]);
-      if (personToEdit) {
-        handleAssignTag(newTag.id);
-      }
+
+      // Actualizamos localmente sin esperar al prop del padre
+      setLocalTags((prev) => [...prev, newTag]);
+
+      if (personToEdit) handleAssignTag(newTag.id);
       setNewTagInput("");
     } catch (e) {
       alert("Error al crear etiqueta");
     }
   };
 
-  // --- GUARDAR PERSONA ---
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (isEditing) {
-        await api.patch(`/persons/${personToEdit.id}`, formData);
-      } else {
-        await api.post("/persons", formData);
-      }
+      if (isEditing) await api.patch(`/persons/${personToEdit.id}`, formData);
+      else await api.post("/persons", formData);
+
       onSuccess();
       onClose();
     } catch (error) {
-      alert("Error al guardar. Verifique los datos.");
+      alert("Error al guardar.");
     }
   };
 
-  // Helper para colores de estado
+  // --- HELPERS ---
   const getStatusColor = (status: string) => {
     switch (status) {
       case "VISITED":
@@ -190,7 +190,7 @@ export default function PersonModal({
       case "TO_VISIT":
         return "bg-amber-600 border-amber-500 text-white";
       default:
-        return "bg-zinc-800 border-zinc-700 text-zinc-400"; // NOT_VISITED
+        return "bg-zinc-800 border-zinc-700 text-zinc-400";
     }
   };
 
@@ -202,59 +202,40 @@ export default function PersonModal({
       minute: "2-digit",
     });
     let text = event.event_type;
-    let icon = <CheckCircle size={14} className="text-zinc-500" />;
+    let icon = <div className="w-2 h-2 rounded-full bg-zinc-500" />;
 
     if (event.event_type === "TAG_ASSIGNED") {
       const tagName =
         localTags.find((t) => t.id === event.payload?.tagId)?.name ||
         "Etiqueta";
-      text = `Asignó etiqueta: "${tagName}"`;
+      text = `Asignó: "${tagName}"`;
       icon = <Tag size={14} className="text-blue-500" />;
-    } else if (event.event_type === "TAG_REMOVED") {
-      text = `Quitó una etiqueta`;
-      icon = <Trash2 size={14} className="text-red-500" />;
-    } else if (event.event_type === "PERSON_CREATED") {
-      text = "Persona registrada en el sistema";
-      icon = <User size={14} className="text-emerald-500" />;
     } else if (event.event_type === "PERSON_UPDATED") {
-      const details = event.payload?.details;
-      text = details ? `Actualizó: ${details}` : "Actualizó datos de la ficha";
+      text = event.payload?.details || "Datos actualizados";
       icon = <Save size={14} className="text-orange-500" />;
     }
 
     return (
       <div
         key={event.id}
-        className="flex gap-3 items-start pb-4 border-l border-zinc-800 pl-4 ml-2 relative"
+        className="flex gap-3 items-start pb-3 border-b border-zinc-800/50 mb-3 last:border-0"
       >
-        <div className="absolute -left-[5px] top-1 bg-zinc-900 rounded-full border border-zinc-700 p-0.5">
-          {icon}
-        </div>
+        <div className="mt-1">{icon}</div>
         <div className="text-sm">
-          <p className="text-zinc-300 font-medium">{text}</p>
-          <div className="flex items-center gap-2 text-xs text-zinc-500 mt-1">
-            <span className="flex items-center gap-1">
-              <Clock size={10} /> {date}
-            </span>
-            <span>•</span>
-            <span className="text-zinc-400">
-              {event.actor_name || "Sistema"}
-            </span>
-          </div>
+          <p className="text-zinc-300 font-medium leading-tight">{text}</p>
+          <span className="text-[10px] text-zinc-500">
+            {date} • {event.actor_name}
+          </span>
         </div>
       </div>
     );
   };
 
-  const CheckCircle = ({ size, className }: any) => (
-    <div className={`w-3 h-3 rounded-full border ${className}`} />
-  );
-
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-zinc-950 border border-zinc-800 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[95vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-zinc-950 border border-zinc-800 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
         {/* CABECERA */}
         <div className="border-b border-zinc-800 bg-zinc-900/50 rounded-t-2xl">
           <div className="p-6 flex justify-between items-center pb-2">
@@ -270,11 +251,11 @@ export default function PersonModal({
                   </>
                 )}
               </h2>
-              <p className="text-zinc-400 text-xs mt-1">
-                {isEditing
-                  ? `CI: ${personToEdit.document_id} - ${personToEdit.first_name} ${personToEdit.last_name}`
-                  : "Registro de nuevo votante."}
-              </p>
+              {isEditing && (
+                <p className="text-zinc-400 text-xs mt-1 font-mono">
+                  CI: {personToEdit.document_id}
+                </p>
+              )}
             </div>
             <button
               onClick={onClose}
@@ -288,34 +269,34 @@ export default function PersonModal({
             <div className="flex px-6 gap-6">
               <button
                 onClick={() => setActiveTab("details")}
-                className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === "details" ? "text-white border-white" : "text-zinc-500 border-transparent hover:text-zinc-300"}`}
+                className={`pb-3 text-sm font-bold border-b-2 ${activeTab === "details" ? "border-white text-white" : "border-transparent text-zinc-500"}`}
               >
-                FICHA DE DATOS
+                FICHA
               </button>
               <button
                 onClick={() => setActiveTab("history")}
-                className={`pb-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === "history" ? "text-white border-white" : "text-zinc-500 border-transparent hover:text-zinc-300"}`}
+                className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 ${activeTab === "history" ? "border-white text-white" : "border-transparent text-zinc-500"}`}
               >
-                <History size={14} /> HISTORIAL Y EVENTOS
+                <History size={14} /> BITÁCORA
               </button>
             </div>
           )}
         </div>
 
-        {/* CONTENIDO SCROLLEABLE */}
+        {/* CONTENIDO */}
         <div className="p-6 overflow-y-auto space-y-6 custom-scrollbar flex-1">
-          {activeTab === "details" && (
+          {activeTab === "details" ? (
             <form id="person-form" onSubmit={handleSave} className="space-y-6">
-              {/* ETIQUETAS (SOLO EN EDICIÓN) */}
+              {/* ETIQUETAS */}
               {isEditing && (
                 <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
                   <div className="flex justify-between items-center mb-3">
                     <h3 className="text-xs font-black text-zinc-400 uppercase flex items-center gap-2">
-                      <Tag size={12} /> Etiquetas Asignadas
+                      <Tag size={12} /> Etiquetas
                     </h3>
                     <div className="flex gap-2">
                       <select
-                        className="bg-black border border-zinc-700 text-xs text-white rounded px-2 py-1 outline-none focus:border-zinc-500 max-w-[120px]"
+                        className="bg-black border border-zinc-700 text-xs text-white rounded px-2 outline-none"
                         onChange={(e) => {
                           handleAssignTag(e.target.value);
                           e.target.value = "";
@@ -330,7 +311,7 @@ export default function PersonModal({
                       </select>
                       <div className="flex items-center gap-1">
                         <input
-                          className="bg-black border border-zinc-700 text-xs text-white rounded px-2 py-1 w-24 outline-none focus:border-blue-500"
+                          className="bg-black border border-zinc-700 text-xs text-white rounded px-2 py-1 w-24 outline-none"
                           placeholder="Nueva..."
                           value={newTagInput}
                           onChange={(e) => setNewTagInput(e.target.value)}
@@ -338,7 +319,7 @@ export default function PersonModal({
                         <button
                           type="button"
                           onClick={handleCreateTag}
-                          className="bg-blue-600 text-white p-1 rounded hover:bg-blue-500"
+                          className="bg-blue-600 text-white p-1 rounded"
                         >
                           <Plus size={12} />
                         </button>
@@ -368,54 +349,44 @@ export default function PersonModal({
                       ))
                     ) : (
                       <span className="text-xs text-zinc-600 italic">
-                        Sin etiquetas asignadas.
+                        Sin etiquetas.
                       </span>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* SECCIÓN 1: DATOS PERSONALES Y ESTADO */}
+              {/* ESTADOS */}
               <div className="space-y-4">
-                <h3 className="text-xs font-black text-emerald-500 uppercase tracking-wider flex items-center gap-2">
-                  1. Datos de Contacto y Estado
-                </h3>
-
-                {/* BOTONERA DE ESTADO (NUEVO) */}
-                <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2">
-                  <label className="text-[10px] font-bold text-zinc-400 uppercase w-full sm:w-auto">
+                {/* BOTONERA DE ESTADO */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 flex flex-wrap items-center gap-2">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase w-full">
                     ESTADO ACTUAL:
                   </label>
-                  <div className="flex flex-wrap gap-1">
-                    {[
-                      { id: "NOT_VISITED", label: "❌ NO VISITADO" },
-                      { id: "TO_VISIT", label: "⏳ POR VISITAR" },
-                      { id: "CONTACTED", label: "📞 CONTACTADO" },
-                      { id: "VISITED", label: "✅ VISITADO" },
-                      { id: "VISITED_PC", label: "🏢 PASÓ POR PC" },
-                    ].map((st) => (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() =>
-                          setFormData({ ...formData, campaignStatus: st.id })
-                        }
-                        className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all border ${
-                          formData.campaignStatus === st.id
-                            ? getStatusColor(st.id)
-                            : "bg-transparent text-zinc-500 border-zinc-800 hover:border-zinc-700"
-                        }`}
-                      >
-                        {st.label}
-                      </button>
-                    ))}
-                  </div>
+                  {[
+                    { id: "NOT_VISITED", label: "❌ NO VISITADO" },
+                    { id: "TO_VISIT", label: "⏳ POR VISITAR" },
+                    { id: "CONTACTED", label: "📞 CONTACTADO" },
+                    { id: "VISITED", label: "✅ VISITADO" },
+                    { id: "VISITED_PC", label: "🏢 PASÓ POR PC" },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() =>
+                        setFormData({ ...formData, campaignStatus: st.id })
+                      }
+                      className={`px-3 py-1.5 rounded-md text-[10px] font-bold border transition-all ${formData.campaignStatus === st.id ? getStatusColor(st.id) : "bg-transparent text-zinc-500 border-zinc-800 hover:border-zinc-700"}`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-zinc-500 mb-1">
-                      TELÉFONO / WHATSAPP
+                      TELÉFONO
                     </label>
                     <div className="relative">
                       <Phone
@@ -423,8 +394,8 @@ export default function PersonModal({
                         size={14}
                       />
                       <input
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 p-2.5 text-sm text-white focus:border-emerald-500 outline-none transition-colors"
-                        placeholder="Ej: 0981..."
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 p-2.5 text-sm text-white focus:border-emerald-500 outline-none"
+                        placeholder="09xx..."
                         value={formData.phoneNumber}
                         onChange={(e) =>
                           setFormData({
@@ -437,7 +408,7 @@ export default function PersonModal({
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-zinc-500 mb-1">
-                      BARRIO / UBICACIÓN REAL
+                      BARRIO REAL
                     </label>
                     <div className="relative">
                       <MapPin
@@ -451,7 +422,7 @@ export default function PersonModal({
                         onChange={(e) =>
                           setFormData({ ...formData, address: e.target.value })
                         }
-                        placeholder="Seleccione o escriba uno nuevo..."
+                        placeholder="Seleccione..."
                       />
                       <datalist id="address-options">
                         {availableAddresses.map((addr) => (
@@ -463,36 +434,34 @@ export default function PersonModal({
                 </div>
               </div>
 
-              {/* SECCIÓN 2: LOGÍSTICA DÍA D (NUEVO) */}
+              {/* LOGÍSTICA DÍA D */}
               <div className="bg-blue-900/10 border border-blue-900/30 p-4 rounded-xl">
                 <h3 className="text-xs font-black text-blue-400 uppercase mb-3 flex items-center gap-2">
-                  <Car size={14} /> Operativo Día D
+                  <Car size={14} /> Logística Día D
                 </h3>
-                <div className="flex items-center gap-4 mb-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 rounded bg-zinc-900 border-zinc-700 accent-blue-500"
-                      checked={formData.needsTransport}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          needsTransport: e.target.checked,
-                        })
-                      }
-                    />
-                    <span className="text-sm font-bold text-white">
-                      ¿Necesita transporte?
-                    </span>
-                  </label>
-                </div>
+                <label className="flex items-center gap-2 cursor-pointer mb-3">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded bg-zinc-900 border-zinc-700 accent-blue-500"
+                    checked={formData.needsTransport}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        needsTransport: e.target.checked,
+                      })
+                    }
+                  />
+                  <span className="text-sm font-bold text-white">
+                    ¿Necesita transporte?
+                  </span>
+                </label>
 
                 {formData.needsTransport && (
                   <div className="grid grid-cols-3 gap-2 animate-in fade-in slide-in-from-top-2">
                     {[
                       { id: "PENDING", label: "⚠️ PENDIENTE" },
                       { id: "ASSIGNED", label: "🚙 ASIGNADO" },
-                      { id: "COMPLETED", label: "🏁 YA SE BUSCÓ" },
+                      { id: "COMPLETED", label: "🏁 LISTO" },
                     ].map((st) => (
                       <button
                         key={st.id}
@@ -509,65 +478,54 @@ export default function PersonModal({
                 )}
               </div>
 
-              <hr className="border-zinc-800" />
-
-              {/* SECCIÓN 3: ESTRATEGIA */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-black text-purple-500 uppercase tracking-wider flex items-center gap-2">
-                  3. Estrategia
-                </h3>
-                <div>
-                  <label className="block text-xs font-bold text-zinc-500 mb-1">
+              {/* NOTAS */}
+              <div>
+                <div className="flex justify-between mb-1">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase">
                     INTENCIÓN DE VOTO
                   </label>
-                  <select
-                    className={`w-full p-2 rounded-lg text-sm font-bold outline-none border ${formData.currentVoteIntent === "SURE" ? "bg-emerald-950/30 border-emerald-900 text-emerald-400" : formData.currentVoteIntent === "OPPOSITION" ? "bg-red-950/30 border-red-900 text-red-400" : "bg-zinc-900 border-zinc-800 text-white"}`}
-                    value={formData.currentVoteIntent}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        currentVoteIntent: e.target.value,
-                      })
-                    }
-                  >
-                    <option value="SURE">VOTO SEGURO 🟢</option>
-                    <option value="PROBABLE">PROBABLE 🟡</option>
-                    <option value="UNDECIDED">INDECISO ⚪</option>
-                    <option value="OPPOSITION">OPOSICIÓN 🔴</option>
-                  </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-zinc-500 mb-1">
-                    NOTAS / BITÁCORA
-                  </label>
-                  <textarea
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white h-24 focus:border-purple-500 outline-none resize-none"
-                    placeholder="Escribe aquí notas sobre visitas..."
-                    value={formData.notes}
-                    onChange={(e) =>
-                      setFormData({ ...formData, notes: e.target.value })
-                    }
-                  />
-                </div>
+                <select
+                  className={`w-full p-2 mb-4 rounded-lg text-sm font-bold outline-none border ${formData.currentVoteIntent === "SURE" ? "bg-emerald-950/30 border-emerald-900 text-emerald-400" : formData.currentVoteIntent === "OPPOSITION" ? "bg-red-950/30 border-red-900 text-red-400" : "bg-zinc-900 border-zinc-800 text-white"}`}
+                  value={formData.currentVoteIntent}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      currentVoteIntent: e.target.value,
+                    })
+                  }
+                >
+                  <option value="SURE">🟢 VOTO SEGURO</option>
+                  <option value="PROBABLE">🟡 PROBABLE</option>
+                  <option value="UNDECIDED">⚪ INDECISO</option>
+                  <option value="OPPOSITION">🔴 OPOSICIÓN</option>
+                </select>
+
+                <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
+                  NOTAS
+                </label>
+                <textarea
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-white h-24 focus:border-purple-500 outline-none resize-none"
+                  placeholder="Escribe aquí..."
+                  value={formData.notes}
+                  onChange={(e) =>
+                    setFormData({ ...formData, notes: e.target.value })
+                  }
+                />
               </div>
             </form>
-          )}
-
-          {/* --- TAB 2: HISTORIAL Y EVENTOS --- */}
-          {activeTab === "history" && (
+          ) : (
             <div className="space-y-4">
               {loadingHistory ? (
                 <p className="text-zinc-500 text-center py-10 animate-pulse">
-                  Cargando eventos...
+                  Cargando...
                 </p>
               ) : history.length > 0 ? (
-                <div className="pt-2">
-                  {history.map((event) => formatEvent(event))}
-                </div>
+                history.map(formatEvent)
               ) : (
                 <div className="text-center py-10 text-zinc-600">
                   <History size={40} className="mx-auto mb-2 opacity-20" />
-                  <p>No hay eventos registrados para esta persona.</p>
+                  <p>Sin historial.</p>
                 </div>
               )}
             </div>
@@ -586,18 +544,9 @@ export default function PersonModal({
             <button
               form="person-form"
               type="submit"
-              className="flex-1 bg-white text-black py-3 rounded-xl font-black hover:bg-zinc-200 transition-colors flex items-center justify-center gap-2"
+              className="flex-1 bg-white text-black py-3 rounded-xl font-black hover:bg-zinc-200 flex items-center justify-center gap-2"
             >
-              <Save size={18} />{" "}
-              {isEditing ? "GUARDAR CAMBIOS" : "REGISTRAR PERSONA"}
-            </button>
-          )}
-          {activeTab === "history" && (
-            <button
-              onClick={() => setActiveTab("details")}
-              className="flex-1 bg-zinc-800 text-white py-3 rounded-xl font-bold hover:bg-zinc-700 transition-colors"
-            >
-              VOLVER A DATOS
+              <Save size={18} /> {isEditing ? "GUARDAR" : "REGISTRAR"}
             </button>
           )}
         </div>

@@ -1,4 +1,4 @@
-import { query } from "../../db/query";
+import { pool, query } from "../../db/query";
 
 export async function listCreate(campaignId: string, data: any) {
   const res = await query(
@@ -9,15 +9,51 @@ export async function listCreate(campaignId: string, data: any) {
   );
   return res.rows[0];
 }
+export async function ensureSystemLists(campaignId: string) {
+  const client = await pool.connect();
+  try {
+    // 1. Revisar si ya existen listas
+    const check = await client.query(`SELECT count(*) FROM lists WHERE campaign_id = $1`, [campaignId]);
+    if (parseInt(check.rows[0].count) > 0) return; // Ya tiene listas, no hacemos nada.
 
+    // 2. Insertar listas por defecto
+    const lists = [
+      {
+        name: "📍 Mis Vecinos Indecisos",
+        icon: "map-pin",
+        filters: { 
+            voteIntent: "UNDECIDED", 
+            // NOTA: El frontend deberá sustituir esto dinámicamente con el barrio del usuario logueado
+            // O podemos dejarlo genérico como "Indecisos Generales" por ahora
+            address: "" 
+        }
+      },
+      {
+        name: "📅 Meta Diaria (Por Visitar)",
+        icon: "calendar",
+        filters: { campaignStatus: "TO_VISIT" }
+      },
+      {
+        name: "✅ Ya Votaron (Monitoreo)",
+        icon: "check-circle",
+        filters: { hasVoted: true } // Asumiendo que agregaremos este filtro al motor
+      }
+    ];
+
+    for (const list of lists) {
+      await client.query(
+        `INSERT INTO lists (campaign_id, name, icon, filters, is_favorite) VALUES ($1, $2, $3, $4, true)`,
+        [campaignId, list.name, list.icon, list.filters]
+      );
+    }
+  } finally {
+    client.release();
+  }
+}
 export async function listsGetAll(campaignId: string) {
-  const res = await query(
-    `SELECT * FROM lists 
-     WHERE campaign_id = $1 
-     ORDER BY is_favorite DESC, created_at DESC`,
-    [campaignId]
-  );
-  return res.rows;
+  await ensureSystemLists(campaignId);
+
+  return query(`SELECT * FROM lists WHERE campaign_id = $1 ORDER BY is_favorite DESC, name ASC`, [campaignId]).then(r => r.rows);
 }
 
 export async function listGet(campaignId: string, id: string) {
@@ -48,4 +84,133 @@ export async function listUpdate(campaignId: string, id: string, data: any) {
         [data.name, data.description, data.icon, data.filters, data.isFavorite, id, campaignId]
     );
     return { success: true };
+}
+
+function buildSmartQuery(filters: any, baseParamIndex: number) {
+  const conditions: string[] = [];
+  const values: any[] = [];
+  let idx = baseParamIndex;
+
+  // 1. Filtro por BARRIO (Tabla global_citizens)
+  if (filters.address && filters.address.trim() !== "") {
+    conditions.push(`g.address = $${idx}`);
+    values.push(filters.address);
+    idx++;
+  }
+
+  // 2. Filtro por INTENCIÓN DE VOTO (Tabla persons)
+  if (filters.voteIntent && filters.voteIntent.trim() !== "") {
+    conditions.push(`p.current_vote_intent = $${idx}`);
+    values.push(filters.voteIntent);
+    idx++;
+  }
+
+  // 3. Filtro por ESTADO DE CAMPAÑA (Tabla persons)
+  if (filters.campaignStatus && filters.campaignStatus.trim() !== "") {
+    conditions.push(`p.campaign_status = $${idx}`);
+    values.push(filters.campaignStatus);
+    idx++;
+  }
+
+  // 4. Filtro por PARTIDO (Tabla global_citizens)
+  if (filters.party && filters.party.trim() !== "") {
+    conditions.push(`g.party_affiliation = $${idx}`);
+    values.push(filters.party);
+    idx++;
+  }
+
+  // 5. Filtro por ETIQUETA (Lógica especial Many-to-Many)
+  if (filters.tagId && filters.tagId.trim() !== "") {
+    conditions.push(`EXISTS (
+      SELECT 1 FROM person_tags pt 
+      WHERE pt.person_id = p.id AND pt.tag_id = $${idx}
+    )`);
+    values.push(filters.tagId);
+    idx++;
+  }
+
+  // 6. Filtro LOGÍSTICA (Transporte)
+  if (filters.needsTransport === true || filters.needsTransport === 'true') {
+      conditions.push(`p.needs_transport = true`);
+  }
+  
+  if (filters.transportStatus && filters.transportStatus.trim() !== "") {
+      conditions.push(`p.transport_status = $${idx}`);
+      values.push(filters.transportStatus);
+      idx++;
+  }
+
+  // 7. Filtro por ESTADO DE VISITA (Visitado/No Visitado) - Legacy support
+  if (filters.visitedStatus) {
+      if (filters.visitedStatus === 'VISITED') conditions.push(`p.campaign_status IN ('VISITED', 'VISITED_PC')`);
+      if (filters.visitedStatus === 'NOT_VISITED') conditions.push(`(p.campaign_status IS NULL OR p.campaign_status = 'NOT_VISITED')`);
+      // No incrementamos idx porque no usamos parámetros, son literales seguros
+  }
+
+  return { 
+    whereClause: conditions.length > 0 ? "AND " + conditions.join(" AND ") : "", 
+    values 
+  };
+}
+
+export async function listGetMembers(campaignId: string, listId: string, limit: number = 50, offset: number = 0) {
+  // 1. Primero obtenemos la definición de la lista para ver sus filtros
+  const listDef = await query(
+  `SELECT name, filters FROM lists WHERE id = $1 AND campaign_id = $2`,
+  [listId, campaignId]
+);
+
+  if (listDef.rows.length === 0) return null; // La lista no existe
+
+  const filters = listDef.rows[0].filters || {};
+  const listName = listDef.rows[0].name;
+
+  // 2. Construimos la query dinámica usando el Motor
+  // Empezamos en $2 porque $1 será campaignId
+  const { whereClause, values } = buildSmartQuery(filters, 2);
+
+  // 3. Ejecutamos la consulta final
+  // NOTA: Traemos las mismas columnas que en el Padrón General para reutilizar la tabla del frontend
+  const sql = `
+    SELECT 
+        p.id, 
+        p.current_vote_intent, 
+        p.has_voted, 
+        p.is_visited, 
+        p.campaign_status,     -- Importante para colorear
+        p.needs_transport,     -- Importante para logística
+        p.transport_status,
+        p.notes,
+        g.document_id, 
+        g.first_name, 
+        g.last_name, 
+        g.address, 
+        g.party_affiliation, 
+        g.voting_order_number, 
+        g.phone_number,
+        g.location_place,
+        g.voting_table_number,
+        count(*) OVER() as full_count
+    FROM persons p
+    JOIN global_citizens g ON p.citizen_id = g.id
+    WHERE p.campaign_id = $1 
+    ${whereClause}
+    ORDER BY p.updated_at DESC
+    LIMIT $${values.length + 2} OFFSET $${values.length + 3}
+  `;
+
+  // Armamos el array final de parámetros: [campaignId, ...filtros, limit, offset]
+  const finalParams = [campaignId, ...values, limit, offset];
+
+  const res = await query(sql, finalParams);
+  
+
+  
+  return {
+    listName,
+    members: res.rows,
+    total: res.rows.length > 0 ? parseInt(res.rows[0].full_count) : 0,
+    filtersApplied: filters // Devolvemos los filtros para que el frontend sepa qué se aplicó
+  };
+
 }

@@ -145,7 +145,7 @@ export default function PersonsPage() {
   const totalPages = Math.ceil(totalRecords / limit);
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20 relative z-0">
       {/* CABECERA */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
