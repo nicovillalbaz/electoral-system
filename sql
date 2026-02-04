@@ -233,3 +233,69 @@ CREATE TABLE station_checkins (
 CREATE TRIGGER trg_users_updated BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_persons_updated BEFORE UPDATE ON persons FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_global_updated BEFORE UPDATE ON global_citizens FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ============================================================
+-- 8. MÓDULO 3: ACTIVIDADES Y AGENDA
+-- ============================================================
+
+CREATE TYPE task_priority AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'URGENT');
+CREATE TYPE task_type AS ENUM ('VISIT', 'CALL', 'EVENT', 'LOGISTICS');
+
+CREATE TABLE tasks (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id     uuid NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  title           text NOT NULL,
+  description     text,
+  priority        task_priority NOT NULL DEFAULT 'MEDIUM',
+  task_type       task_type NOT NULL DEFAULT 'VISIT',
+  
+  -- Fechas
+  due_date        timestamptz,
+  completed_at    timestamptz,
+  
+  -- Asignación
+  assigned_user_id uuid REFERENCES users(id),
+  created_by      uuid REFERENCES users(id),
+  
+  -- Vinculación (Polymorphic-ish logic specific to our domain)
+  related_person_id uuid REFERENCES persons(id) ON DELETE SET NULL,
+  related_list_id   uuid REFERENCES lists(id) ON DELETE SET NULL,
+  
+  location_text   text,
+  location_lat    double precision,
+  location_lng    double precision,
+  
+  created_at      timestamptz DEFAULT now(),
+  updated_at      timestamptz DEFAULT now()
+);
+
+CREATE TRIGGER trg_tasks_updated BEFORE UPDATE ON tasks FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ============================================================
+-- 9. MÓDULO 5: TRANSPORTE (UBER ELECTORAL)
+-- ============================================================
+
+CREATE TYPE transport_status AS ENUM ('PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED');
+
+CREATE TABLE transport_requests (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id     uuid NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  
+  -- Pasajero
+  person_id       uuid NOT NULL REFERENCES persons(id),
+  pickup_address  text,
+  pickup_lat      double precision,
+  pickup_lng      double precision,
+  
+  -- Destino (Generalmente es su Polling Place, pero guardamos por si acaso)
+  destination_address text,
+  
+  -- Estado
+  status          transport_status NOT NULL DEFAULT 'PENDING',
+  driver_user_id  uuid REFERENCES users(id), -- Chofer asignado
+  
+  requested_at    timestamptz DEFAULT now(),
+  completed_at    timestamptz,
+  
+  notes           text
+);

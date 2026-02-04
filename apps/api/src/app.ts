@@ -21,6 +21,7 @@ import { listsRoutes } from "./modules/lists/lists.routes";
 import { contactsRoutes } from "./modules/contacts/contacts.routes";
 import { eventsRoutes } from "./modules/events/events.routes";
 import { dashboardRoutes } from "./modules/dashboard/dashboard.routes";
+import { tasksRoutes } from "./modules/tasks/tasks.routes";
 
 // Hacemos la función ASYNC para garantizar el orden de carga
 export async function buildApp() {
@@ -79,6 +80,9 @@ export async function buildApp() {
   await app.register(contactsRoutes, { prefix: "/contacts" });
   await app.register(eventsRoutes, { prefix: "/events" });
   await app.register(dashboardRoutes, { prefix: "/dashboard" });
+
+  // Módulo 3: Actividades
+  await app.register(tasksRoutes, { prefix: "/tasks" });
 
   return app;
 }
