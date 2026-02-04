@@ -153,7 +153,7 @@ function buildSmartQuery(filters: any, baseParamIndex: number) {
   };
 }
 
-export async function listGetMembers(campaignId: string, listId: string, limit: number = 50, offset: number = 0) {
+export async function listGetMembers(campaignId: string, listId: string, limit: number = 50, offset: number = 0, filterOverride?: any) {
   // 1. Primero obtenemos la definición de la lista para ver sus filtros
   const listDef = await query(
   `SELECT name, filters FROM lists WHERE id = $1 AND campaign_id = $2`,
@@ -162,14 +162,16 @@ export async function listGetMembers(campaignId: string, listId: string, limit: 
 
   if (listDef.rows.length === 0) return null; // La lista no existe
 
-  const filters = listDef.rows[0].filters || {};
+  // 2. Fusionar filtros: Override tiene prioridad sobre DB
+  const dbFilters = listDef.rows[0].filters || {};
+  const filters = { ...dbFilters, ...(filterOverride || {}) };
   const listName = listDef.rows[0].name;
 
-  // 2. Construimos la query dinámica usando el Motor
+  // 3. Construimos la query dinámica usando el Motor
   // Empezamos en $2 porque $1 será campaignId
   const { whereClause, values } = buildSmartQuery(filters, 2);
 
-  // 3. Ejecutamos la consulta final
+  // 4. Ejecutamos la consulta final
   // NOTA: Traemos las mismas columnas que en el Padrón General para reutilizar la tabla del frontend
   const sql = `
     SELECT 
@@ -204,13 +206,11 @@ export async function listGetMembers(campaignId: string, listId: string, limit: 
 
   const res = await query(sql, finalParams);
   
-
-  
   return {
     listName,
     members: res.rows,
     total: res.rows.length > 0 ? parseInt(res.rows[0].full_count) : 0,
-    filtersApplied: filters // Devolvemos los filtros para que el frontend sepa qué se aplicó
+    filtersApplied: filters // Devolvemos los filtros para que el frontend sepa qué se aplicó (fusión)
   };
 
 }

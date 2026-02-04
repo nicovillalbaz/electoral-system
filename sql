@@ -299,3 +299,56 @@ CREATE TABLE transport_requests (
   
   notes           text
 );
+
+-- ============================================================
+-- 10. MÓDULO 7: CONTROL DÍA D (SALA DE GUERRA)
+-- ============================================================
+
+DO $$ BEGIN
+    CREATE TYPE voting_status AS ENUM ('PENDING', 'SEARCHING', 'ON_TRANSIT', 'ARRIVED', 'CHECKED_IN', 'VOTED');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+-- Extensiones a la tabla Persons
+ALTER TABLE persons ADD COLUMN IF NOT EXISTS status_day_d voting_status DEFAULT 'PENDING';
+ALTER TABLE persons ADD COLUMN IF NOT EXISTS logistics_flag boolean DEFAULT false;
+
+-- Tracking de Logística (Trazabilidad)
+CREATE TABLE IF NOT EXISTS logistics_tracking (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id     uuid NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  person_id       uuid NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+  
+  -- Estado reportado
+  status          voting_status NOT NULL,
+  
+  -- Contexto
+  vehicle_id      uuid, -- Opcional, si tenemos tabla de vehículos
+  operator_id     uuid REFERENCES users(id), -- Quién hizo el cambio
+  
+  metadata        jsonb DEFAULT '{}'::jsonb, -- Coordenadas GPS, etc.
+  
+  recorded_at     timestamptz DEFAULT now()
+);
+
+-- La Celda Discreta (Incentivos)
+-- SEGURIDAD: Solo visible para usuarios con permiso especial
+CREATE TABLE IF NOT EXISTS incentives_log (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id     uuid NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  person_id       uuid NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+  
+  incentive_type  text NOT NULL, -- 'viatico', 'combustible', 'snack'
+  amount          decimal(10, 2) DEFAULT 0,
+  
+  delivered_by    uuid REFERENCES users(id),
+  delivered_at    timestamptz DEFAULT now(),
+  
+  notes           text
+);
+
+-- Índices para el tablero de alta velocidad
+CREATE INDEX IF NOT EXISTS ix_persons_day_d_status ON persons(campaign_id, status_day_d);
+CREATE INDEX IF NOT EXISTS ix_logistics_tracking_person ON logistics_tracking(person_id, recorded_at DESC);
+

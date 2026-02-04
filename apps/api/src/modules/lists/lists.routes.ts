@@ -45,15 +45,25 @@ export async function listsRoutes(app: FastifyInstance) {
   app.get("/:id/members", { preHandler: [app.requireAuth] }, async (req: any) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     
-    // Paginación simple
+    // Paginación y Filtros (JSON stringified)
     const querySchema = z.object({
         page: z.coerce.number().default(1),
-        limit: z.coerce.number().default(50)
+        limit: z.coerce.number().default(50),
+        filters: z.string().optional() // Recibimos JSON string
     });
-    const { page, limit } = querySchema.parse(req.query);
+    const { page, limit, filters } = querySchema.parse(req.query);
     const offset = (page - 1) * limit;
 
-    const result = await listGetMembers(req.user.campaignId, id, limit, offset);
+    let filterOverride = undefined;
+    if (filters) {
+        try {
+            filterOverride = JSON.parse(filters);
+        } catch (e) {
+            // Ignorar JSON inválido
+        }
+    }
+
+    const result = await listGetMembers(req.user.campaignId, id, limit, offset, filterOverride);
     
     if (!result) throw { statusCode: 404, message: "Lista no encontrada" };
     

@@ -37,12 +37,8 @@ export default function DashboardLayout({
     <div className="min-h-screen bg-background text-foreground flex font-sans antialiased selection:bg-red-500/30">
       <Sidebar />
       
-      {/* AJUSTES DE DISEÑO: 
-         - md:ml-72: Porque ensanchamos el Sidebar para que se vea más moderno.
-         - bg-gradient: Un fondo sutil para que no sea plano.
-         - animate-in: Efecto suave al cargar.
-      */}
-      <main className="flex-1 md:ml-72 p-8 lg:p-12 overflow-y-auto h-screen bg-gradient-to-br from-background via-background to-zinc-950">
+      {/* AJUSTES DE DISEÑO: Responsive Margin */}
+      <main className="flex-1 md:ml-20 lg:ml-72 p-4 md:p-8 lg:p-12 overflow-y-auto h-screen bg-gradient-to-br from-background via-background to-zinc-950 transition-all duration-300">
         <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 slide-in-from-bottom-4">
           {children}
         </div>

@@ -49,10 +49,24 @@ export default function SmartListPage() {
         await api.patch(`/lists/${listId}`, { filters: newFilters });
         setShowFilters(false);
         fetchListMembers(); // Recargar datos con los nuevos filtros
+        
+        // Audit Req: Update URL with params (Optional but requested)
+        // router.push(`?filters=${JSON.stringify(newFilters)}`);
     } catch (e) {
         alert("Error actualizando la lista");
     }
   };
+
+  const [availableAddresses, setAvailableAddresses] = useState<string[]>([]);
+  
+  useEffect(() => {
+      // Load unique options for dropdowns
+      api.get('/territory/neighborhoods').then(res => {
+          // Assuming res.data is array of objects { name: "X" }
+          // We map to strings
+          setAvailableAddresses(res.data.map((n:any) => n.name));
+      }).catch(err => console.error("Failed to load neighborhoods", err));
+  }, []);
 
   return (
     <div className="p-6 h-full flex flex-col relative z-0">

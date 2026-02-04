@@ -1,4 +1,4 @@
-import { query } from "../../db/query";
+import { query, pool } from "../../db/query";
 
 export async function markVoted(input: {
   campaignId: string;
@@ -181,4 +181,141 @@ export async function transportRequestUpdate(campaignId: string, requestId: stri
   }
   
   return updatedRequest;
+}
+
+// --- DAY D CONTROL (MERGED) ---
+
+// 1. Detección de Colisiones GLOBAL (Cross-PC)
+export async function checkCollision(citizenId: string): Promise<{ active: boolean; details?: any }> {
+  // Buscamos si la persona tiene actividad RECIENTE (últimas 2 horas) 
+  // en OTRO puesto de comando diferente al actual se chequeará en el service
+  const sql = `
+    SELECT 
+      lt.campaign_id,
+      lt.status,
+      lt.recorded_at,
+      u.full_name as operator_name
+    FROM logistics_tracking lt
+    JOIN users u ON lt.operator_id = u.id
+    JOIN persons p ON lt.person_id = p.id
+    WHERE p.citizen_id = $1 
+      AND lt.recorded_at > NOW() - INTERVAL '2 hours'
+    ORDER BY lt.recorded_at DESC
+    LIMIT 1
+  `;
+  
+  const res = await query(sql, [citizenId]);
+  if (res.rows.length > 0) {
+    return { active: true, details: res.rows[0] };
+  }
+  return { active: false };
+}
+
+// 2. The Grid - High Density Query
+export async function getDayDGrid(campaignId: string, params: {
+    q?: string,
+    limit?: number,
+    offset?: number
+}) {
+    const { q = "", limit = 50, offset = 0 } = params;
+    const queryParams: any[] = [campaignId];
+    let paramIndex = 2;
+    
+    // Optimizada para velocidad
+    let where = `p.campaign_id = $1`;
+    
+    if (q) {
+        where += ` AND (g.document_id ILIKE $${paramIndex} OR g.last_name ILIKE $${paramIndex})`;
+        queryParams.push(`%${q}%`);
+        paramIndex++;
+    }
+
+    const sql = `
+      SELECT 
+        p.id,
+        p.citizen_id,
+        g.document_id,
+        g.first_name,
+        g.last_name,
+        g.voting_table_number,
+        p.status_day_d,
+        p.logistics_flag,
+        -- Traemos el último incentivo entregado si existe (solo indicador booleano para la grilla general para velocidad)
+        EXISTS(SELECT 1 FROM incentives_log il WHERE il.person_id = p.id) as has_incentive
+      FROM persons p
+      JOIN global_citizens g ON p.citizen_id = g.id
+      WHERE ${where}
+      ORDER BY 
+        CASE WHEN p.status_day_d = 'PENDING' THEN 0 ELSE 1 END, -- Prioridad a los pendientes
+        g.last_name ASC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+
+    queryParams.push(limit, offset);
+
+    const res = await query(sql, queryParams);
+    return res.rows;
+}
+
+// 3. Update Status (Optimistic)
+export async function updateDayDStatus(
+    campaignId: string, 
+    userId: string, 
+    personId: string, 
+    newStatus: string
+) {
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        
+        // Update person
+        const updateSql = `
+            UPDATE persons 
+            SET status_day_d = $1, updated_at = NOW()
+            WHERE id = $2 AND campaign_id = $3
+            RETURNING id, status_day_d
+        `;
+        const res = await client.query(updateSql, [newStatus, personId, campaignId]);
+        
+        if (res.rowCount === 0) {
+            throw new Error("Person not found");
+        }
+
+        // Log traking
+        const logSql = `
+            INSERT INTO logistics_tracking (campaign_id, person_id, status, operator_id)
+            VALUES ($1, $2, $3, $4)
+        `;
+        await client.query(logSql, [campaignId, personId, newStatus, userId]);
+
+        await client.query("COMMIT");
+        return res.rows[0];
+    } catch (e) {
+        await client.query("ROLLBACK");
+        throw e;
+    } finally {
+        client.release();
+    }
+}
+
+// 4. Registrar Incentivo (La Celda Discreta)
+export async function registerIncentive(
+    campaignId: string,
+    userId: string,
+    data: { personId: string, type: string, amount: number, notes?: string }
+) {
+    const sql = `
+        INSERT INTO incentives_log (campaign_id, person_id, incentive_type, amount, delivered_by, notes)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, created_at
+    `;
+    const res = await query(sql, [
+        campaignId, 
+        data.personId, 
+        data.type, 
+        data.amount, 
+        userId, 
+        data.notes || null
+    ]);
+    return res.rows[0];
 }

@@ -270,6 +270,8 @@ export async function personCreate(campaignId: string, data: any) {
 
 // ACTUALIZAR
 // ... imports ...
+// ACTUALIZAR
+// ... imports ...
 const sanitize = (val: any) => (val === "" || val === undefined ? null : val);
 export async function personUpdate(
   campaignId: string,
@@ -284,7 +286,7 @@ export async function personUpdate(
     // 1. Obtener datos actuales (Snapshot para el historial)
     const currentRes = await client.query(
       `SELECT p.current_vote_intent, p.notes, p.campaign_status, 
-                p.needs_transport, p.transport_status,
+                p.needs_transport, p.transport_status, p.exact_address, p.whatsapp_number, p.assigned_station_id,
                 g.phone_number, g.address, g.location_place 
          FROM persons p
          JOIN global_citizens g ON p.citizen_id = g.id
@@ -298,7 +300,7 @@ export async function personUpdate(
     }
     const before = currentRes.rows[0];
 
-    // 2. Actualizar Global Citizens (Datos Personales)
+    // 2. Actualizar Global Citizens (Datos Personales Básicos y Barrio)
     if (
       patch.firstName ||
       patch.lastName ||
@@ -317,14 +319,16 @@ export async function personUpdate(
       );
     }
 
-    // 3. Actualizar Persons (Datos Campaña)
-    // Aquí aplicamos la sanitización profesional
+    // 3. Actualizar Persons (Datos Campaña + Nuevos Campos)
     if (
       patch.currentVoteIntent !== undefined ||
       patch.notes !== undefined ||
       patch.campaignStatus !== undefined ||
       patch.transportStatus !== undefined ||
-      patch.needsTransport !== undefined
+      patch.needsTransport !== undefined ||
+      patch.exactAddress !== undefined ||
+      patch.whatsappNumber !== undefined ||
+      patch.assignedStationId !== undefined
     ) {
       await client.query(
         `UPDATE persons 
@@ -333,14 +337,20 @@ export async function personUpdate(
              campaign_status = COALESCE($3, campaign_status),
              needs_transport = COALESCE($4, needs_transport),
              transport_status = COALESCE($5, transport_status),
+             exact_address = COALESCE($6, exact_address),
+             whatsapp_number = COALESCE($7, whatsapp_number),
+             assigned_station_id = COALESCE($8, assigned_station_id),
              updated_at = NOW()
-         WHERE id = $6 AND campaign_id = $7`,
+         WHERE id = $9 AND campaign_id = $10`,
         [
-          sanitize(patch.currentVoteIntent), // Convierte "" a null
+          sanitize(patch.currentVoteIntent), 
           patch.notes,
-          sanitize(patch.campaignStatus), // Convierte "" a null
+          sanitize(patch.campaignStatus), 
           patch.needsTransport,
-          sanitize(patch.transportStatus), // Convierte "" a null
+          sanitize(patch.transportStatus),
+          patch.exactAddress, // Campo Nuevo
+          patch.whatsappNumber, // Campo Nuevo
+          sanitize(patch.assignedStationId), // Campo Nuevo
           personId,
           campaignId,
         ],
@@ -350,14 +360,16 @@ export async function personUpdate(
     // 4. Historial (Log de cambios preciso)
     const changes: string[] = [];
 
-    // Comparamos valores sanitizados para no generar logs falsos
     const newVote = sanitize(patch.currentVoteIntent);
     const newStatus = sanitize(patch.campaignStatus);
 
-    if (patch.phoneNumber && patch.phoneNumber !== before.phone_number)
-      changes.push(`Teléfono actualizado`);
-    if (patch.address && patch.address !== before.address)
-      changes.push(`Barrio actualizado`);
+    if (patch.phoneNumber && patch.phoneNumber !== before.phone_number) changes.push(`Teléfono actualizado`);
+    if (patch.address && patch.address !== before.address) changes.push(`Barrio actualizado`);
+    
+    // Logs nuevos
+    if (patch.exactAddress && patch.exactAddress !== before.exact_address) changes.push(`Dir. Exacta actualizada`);
+    if (patch.whatsappNumber && patch.whatsappNumber !== before.whatsapp_number) changes.push(`WhatsApp actualizado`);
+    if (patch.assignedStationId && patch.assignedStationId !== before.assigned_station_id) changes.push(`Puesto asignado`);
 
     if (newVote !== undefined && newVote !== before.current_vote_intent) {
       changes.push(`Intención: ${newVote || "Indeciso"}`);

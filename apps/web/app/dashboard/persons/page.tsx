@@ -58,8 +58,8 @@ export default function PersonsPage() {
   // --- ESTADOS DE VISTA ---
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const [columns, setColumns] = useState({
-    document: true, name: true, order: true, address: false,   
-    party: true, intent: true, status: true, actions: true
+    document: true, name: true, order: true, address: true,   
+    phone: true, party: true, intent: true, status: true, actions: true
   });
 
   // --- ESTADOS DE MODALES ---
@@ -217,6 +217,7 @@ export default function PersonsPage() {
                     {columns.name && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("last_name")}>Nombre <SortIcon field="last_name"/></th>}
                     {columns.order && <th className="p-4 text-center cursor-pointer hover:text-white" onClick={() => handleSort("voting_order_number")}>Orden <SortIcon field="voting_order_number"/></th>}
                     {columns.address && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("address")}>Dirección <SortIcon field="address"/></th>}
+                    {columns.phone && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("phone_number")}>Teléfono <SortIcon field="phone_number"/></th>}
                     {columns.party && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("party_affiliation")}>Partido <SortIcon field="party_affiliation"/></th>}
                     {columns.intent && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("current_vote_intent")}>Intención <SortIcon field="current_vote_intent"/></th>}
                     {columns.status && <th className="p-4">Estado</th>}
@@ -231,6 +232,7 @@ export default function PersonsPage() {
                         {columns.name && <td className="p-4 font-medium text-zinc-200">{p.last_name}, {p.first_name}</td>}
                         {columns.order && <td className="p-4 text-center font-mono text-zinc-500 bg-black/20">{p.voting_order_number || "-"}</td>}
                         {columns.address && <td className="p-4"><div className="flex items-center gap-2 max-w-[200px]" title={p.address}><MapPin size={14} className="text-zinc-600 shrink-0"/><span className="truncate text-xs">{p.address || "-"}</span></div></td>}
+                        {columns.phone && <td className="p-4 text-xs font-mono text-zinc-400">{p.phone_number || "-"}</td>}
                         {columns.party && <td className="p-4"><span className={`text-xs flex items-center gap-1 ${getPartyColor(p.party_affiliation)}`}>{p.party_affiliation ? <Flag size={12} fill="currentColor"/> : null} {p.party_affiliation || "-"}</span></td>}
                         {columns.intent && <td className="p-4"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.current_vote_intent === 'SURE' ? 'bg-emerald-900 text-emerald-300' : 'bg-zinc-800'}`}>{p.current_vote_intent}</span></td>}
                         {columns.status && <td className="p-4">{p.has_voted ? <span className="text-emerald-500 font-bold text-xs">✅ VOTÓ</span> : <span className="text-zinc-600 text-xs">Pendiente</span>}</td>}
