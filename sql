@@ -234,6 +234,153 @@ CREATE TRIGGER trg_users_updated BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUN
 CREATE TRIGGER trg_persons_updated BEFORE UPDATE ON persons FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_global_updated BEFORE UPDATE ON global_citizens FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- E-SYSTEM 2026 COMPLETE DATABASE SCHEMA
+-- Generated for PostgreSQL
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- 1. USERS TABLE
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'OPERATOR',
+    full_name TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    campaign_id UUID
+);
+-- 2. CAMPAIGNS TABLE
+CREATE TABLE IF NOT EXISTS campaigns (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- 3. PERSONS TABLE (MASTER PADRON)
+CREATE TABLE IF NOT EXISTS persons (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL,
+    document_id TEXT NOT NULL,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    birth_date DATE,
+    address TEXT,
+    exact_address TEXT, -- Audit Add
+    phone_number TEXT,
+    whatsapp_number TEXT, -- Audit Add
+    email TEXT,
+    
+    -- Political Data
+    party_affiliation TEXT,
+    voting_place TEXT,
+    voting_table TEXT,
+    voting_order_number INTEGER,
+    
+    -- Campaign Status
+    campaign_status TEXT DEFAULT 'NOT_VISITED', -- NOT_VISITED, TO_VISIT, VISITED, CONTACTED
+    current_vote_intent TEXT DEFAULT 'UNDECIDED', -- SURE, PROBABLE, UNDECIDED, OPPOSITION
+    
+    -- Day D
+    has_voted BOOLEAN DEFAULT FALSE,
+    voted_at TIMESTAMPTZ,
+    needs_transport BOOLEAN DEFAULT FALSE,
+    transport_status TEXT DEFAULT 'PENDING',
+    assigned_station_id UUID,
+    status_day_d TEXT DEFAULT 'PENDING', -- Audit Add
+    logistics_flag BOOLEAN DEFAULT FALSE, -- Audit Add
+    
+    notes TEXT,
+    incentive_notes TEXT, -- Audit Add (Requested Field)
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    
+    CONSTRAINT person_doc_campaign_unique UNIQUE (campaign_id, document_id)
+);
+-- 4. STATIONS TABLE (Puestos de Comando)
+CREATE TABLE IF NOT EXISTS stations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    location_text TEXT,
+    responsible_user_id UUID,
+    target_votes INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- 5. TASKS TABLE (Activities)
+CREATE TABLE IF NOT EXISTS tasks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    priority TEXT DEFAULT 'MEDIUM', -- LOW, MEDIUM, HIGH, URGENT
+    task_type TEXT DEFAULT 'VISIT', -- VISIT, CALL, EVENT, LOGISTICS
+    due_date TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    assigned_user_id UUID,
+    created_by UUID,
+    related_person_id UUID,
+    related_list_id UUID,
+    location_text TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- 6. TAGS TABLE
+CREATE TABLE IF NOT EXISTS tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    color TEXT DEFAULT '#000000',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- 7. PERSON_TAGS JOIN TABLE
+CREATE TABLE IF NOT EXISTS person_tags (
+    person_id UUID NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+    tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (person_id, tag_id)
+);
+-- 8. EVENTS TABLE (Bitácora)
+CREATE TABLE IF NOT EXISTS events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL,
+    person_id UUID REFERENCES persons(id) ON DELETE CASCADE,
+    actor_id UUID, -- User who performed action
+    event_type TEXT NOT NULL, -- PERSON_UPDATED, CALL_LOGGED, VISIT_LOGGED, etc.
+    payload JSONB, -- Previous/New values
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- 9. LISTS TABLE (Smart Segments)
+CREATE TABLE IF NOT EXISTS lists (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    filters JSONB, -- Stored filters for dynamic lists
+    is_static BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- 10. LIST_MEMBERS JOIN TABLE (For static lists)
+CREATE TABLE IF NOT EXISTS list_members (
+    list_id UUID NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+    person_id UUID NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+    added_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (list_id, person_id)
+);
+-- 11. INCENTIVES LOG TABLE (New)
+CREATE TABLE IF NOT EXISTS incentives_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL,
+    person_id UUID REFERENCES persons(id),
+    description TEXT,
+    amount NUMERIC,
+    status TEXT DEFAULT 'PENDING',
+    created_by UUID,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- INDEXES FOR PERFORMANCE
+CREATE INDEX IF NOT EXISTS idx_persons_doc ON persons(document_id);
+CREATE INDEX IF NOT EXISTS idx_persons_campaign ON persons(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_campaign ON tasks(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_events_person ON events(person_id);
+
 -- ============================================================
 -- 8. MÓDULO 3: ACTIVIDADES Y AGENDA
 -- ============================================================
