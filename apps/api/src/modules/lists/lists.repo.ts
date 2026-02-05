@@ -50,10 +50,20 @@ export async function ensureSystemLists(campaignId: string) {
     client.release();
   }
 }
-export async function listsGetAll(campaignId: string) {
+export async function listsGetAll(campaignId: string, search?: string) {
   await ensureSystemLists(campaignId);
 
-  return query(`SELECT * FROM lists WHERE campaign_id = $1 ORDER BY is_favorite DESC, name ASC`, [campaignId]).then(r => r.rows);
+  let sql = `SELECT * FROM lists WHERE campaign_id = $1`;
+  const params: any[] = [campaignId];
+
+  if (search) {
+      sql += ` AND name ILIKE $2`;
+      params.push(`%${search}%`);
+  }
+
+  sql += ` ORDER BY is_favorite DESC, name ASC`;
+
+  return query(sql, params).then(r => r.rows);
 }
 
 export async function listGet(campaignId: string, id: string) {
@@ -99,21 +109,23 @@ function buildSmartQuery(filters: any, baseParamIndex: number) {
   }
 
   // 2. Filtro por INTENCIÓN DE VOTO (Tabla persons)
-  if (filters.voteIntent && filters.voteIntent.trim() !== "") {
+  if (filters.voteIntent && filters.voteIntent.trim() !== "" && filters.voteIntent !== "ALL") {
     conditions.push(`p.current_vote_intent = $${idx}`);
     values.push(filters.voteIntent);
     idx++;
   }
 
   // 3. Filtro por ESTADO DE CAMPAÑA (Tabla persons)
-  if (filters.campaignStatus && filters.campaignStatus.trim() !== "") {
+  // Soportamos tanto camelCase (Frontend) como snake_case (Legacy/DB) por seguridad
+  const cStatus = filters.campaignStatus || filters.campaign_status;
+  if (cStatus && cStatus !== "ALL") {
     conditions.push(`p.campaign_status = $${idx}`);
-    values.push(filters.campaignStatus);
+    values.push(cStatus);
     idx++;
   }
 
   // 4. Filtro por PARTIDO (Tabla global_citizens)
-  if (filters.party && filters.party.trim() !== "") {
+  if (filters.party && filters.party.trim() !== "" && filters.party !== "TODOS") {
     conditions.push(`g.party_affiliation = $${idx}`);
     values.push(filters.party);
     idx++;
@@ -134,7 +146,7 @@ function buildSmartQuery(filters: any, baseParamIndex: number) {
       conditions.push(`p.needs_transport = true`);
   }
   
-  if (filters.transportStatus && filters.transportStatus.trim() !== "") {
+  if (filters.transportStatus && filters.transportStatus.trim() !== "" && filters.transportStatus !== "ALL") {
       conditions.push(`p.transport_status = $${idx}`);
       values.push(filters.transportStatus);
       idx++;
@@ -145,6 +157,23 @@ function buildSmartQuery(filters: any, baseParamIndex: number) {
       if (filters.visitedStatus === 'VISITED') conditions.push(`p.campaign_status IN ('VISITED', 'VISITED_PC')`);
       if (filters.visitedStatus === 'NOT_VISITED') conditions.push(`(p.campaign_status IS NULL OR p.campaign_status = 'NOT_VISITED')`);
       // No incrementamos idx porque no usamos parámetros, son literales seguros
+  }
+
+  // 8. Filtros Financieros y Pedidos
+  if (filters.hasRequests === true || filters.hasRequests === 'true') {
+      conditions.push(`jsonb_array_length(p.requests) > 0`);
+  }
+
+  if (filters.hasFinancialNeeds && filters.hasFinancialNeeds !== 'ALL') {
+      conditions.push(`p.has_financial_needs = $${idx}`);
+      values.push(filters.hasFinancialNeeds === 'true' || filters.hasFinancialNeeds === true);
+      idx++;
+  }
+
+  if (filters.financialNeedsFulfilled && filters.financialNeedsFulfilled !== 'ALL') {
+      conditions.push(`p.financial_needs_fulfilled = $${idx}`);
+      values.push(filters.financialNeedsFulfilled === 'true' || filters.financialNeedsFulfilled === true);
+      idx++;
   }
 
   return { 

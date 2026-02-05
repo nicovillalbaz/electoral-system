@@ -83,15 +83,15 @@ export async function tasksList(
       t.*,
       u_assigned.full_name as assigned_user_name,
       u_creator.full_name as created_by_name,
-      p.first_name as person_first_name,
-      p_global.last_name as person_last_name,
+      g.first_name as person_first_name,
+      g.last_name as person_last_name,
       l.name as list_name,
       count(*) OVER() as full_count
     FROM tasks t
     LEFT JOIN users u_assigned ON t.assigned_user_id = u_assigned.id
     LEFT JOIN users u_creator ON t.created_by = u_creator.id
     LEFT JOIN persons p ON t.related_person_id = p.id
-    LEFT JOIN global_citizens p_global ON p.citizen_id = p_global.id
+    LEFT JOIN global_citizens g ON p.citizen_id = g.id
     LEFT JOIN lists l ON t.related_list_id = l.id
     WHERE ${conditions.join(" AND ")}
     ORDER BY t.due_date ASC NULLS LAST, t.created_at DESC

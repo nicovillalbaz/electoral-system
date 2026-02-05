@@ -7,17 +7,39 @@ interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  taskToEdit?: any; // <--- ADDED
 }
 
-export default function TaskModal({ isOpen, onClose, onSuccess }: TaskModalProps) {
+export default function TaskModal({ isOpen, onClose, onSuccess, taskToEdit }: TaskModalProps) {
   const [loading, setLoading] = useState(false);
   const [availableAddresses, setAvailableAddresses] = useState<string[]>([]);
+  const isEditing = !!taskToEdit;
 
   useEffect(() => {
       if(isOpen) {
           api.get("/persons/addresses").then(res => setAvailableAddresses(res.data)).catch(console.error);
+          
+          if (taskToEdit) {
+              setFormData({
+                  title: taskToEdit.title,
+                  description: taskToEdit.description || "",
+                  priority: taskToEdit.priority || "MEDIUM",
+                  taskType: taskToEdit.task_type || "VISIT", // Note: backend uses task_type (snake), frontend formData camelCase? let's stick to state
+                  dueDate: taskToEdit.due_date ? new Date(taskToEdit.due_date).toISOString().slice(0, 16) : "", // datetime-local format
+                  locationText: taskToEdit.location_text || ""
+              });
+          } else {
+              setFormData({
+                  title: "",
+                  description: "",
+                  priority: "MEDIUM",
+                  taskType: "VISIT",
+                  dueDate: "",
+                  locationText: ""
+              });
+          }
       }
-  }, [isOpen]);
+  }, [isOpen, taskToEdit]);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -33,10 +55,18 @@ export default function TaskModal({ isOpen, onClose, onSuccess }: TaskModalProps
     setLoading(true);
     try {
       if (!formData.title) return alert("Título requerido");
-      await api.post("/tasks", {
+      
+      const payload = {
         ...formData,
         dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null
-      });
+      };
+
+      if (isEditing) {
+          await api.patch(`/tasks/${taskToEdit.id}`, payload);
+      } else {
+          await api.post("/tasks", payload);
+      }
+      
       onSuccess();
       onClose();
     } catch (error) {
@@ -52,7 +82,7 @@ export default function TaskModal({ isOpen, onClose, onSuccess }: TaskModalProps
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
       <div className="bg-zinc-950 border border-zinc-800 w-full max-w-md rounded-xl shadow-2xl">
         <div className="flex justify-between items-center p-4 border-b border-zinc-800">
-           <h2 className="text-lg font-bold text-white">Nueva Tarea</h2>
+           <h2 className="text-lg font-bold text-white">{isEditing ? "Editar Tarea" : "Nueva Tarea"}</h2>
            <button onClick={onClose} className="text-zinc-500 hover:text-white"><X size={20} /></button>
         </div>
         <form onSubmit={handleSave} className="p-4 space-y-4">

@@ -5,20 +5,27 @@ import { X, MapPin, Target, CheckCircle, RotateCcw, Filter, Tag } from "lucide-r
 interface FilterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onApply: (filters: any) => void; // <--- ESTA ES LA PROPIEDAD QUE FALTABA
+  onApply: (filters: any) => void; 
   availableAddresses: string[];
   availableTags: any[];
+  initialValues?: any; // <--- NUEVO: Para editar filtros existentes
 }
 
-export default function FilterModal({ isOpen, onClose, onApply, availableAddresses, availableTags }: FilterModalProps) {
+export default function FilterModal({ isOpen, onClose, onApply, availableAddresses, availableTags, initialValues }: FilterModalProps) {
   
   const [filters, setFilters] = useState({
-    address: "",          
-    party: "TODOS",       
-    voteIntent: "ALL",    
-    tagId: "",            // <--- CAMBIADO: Ahora filtramos por ID de etiqueta
-    votedStatus: "ALL",   
-    visitedStatus: "ALL"  
+    address: initialValues?.address || "",          
+    party: initialValues?.party || "TODOS",       
+    voteIntent: initialValues?.voteIntent || "ALL",    
+    tagId: initialValues?.tagId || "",            
+    votedStatus: initialValues?.votedStatus || "ALL",
+    // Robustez: soporte camelCase o snake_case
+    campaignStatus: initialValues?.campaignStatus || initialValues?.campaign_status || "ALL",
+    
+    // Nuevos
+    hasRequests: initialValues?.hasRequests || false, // Checkbox boolean
+    hasFinancialNeeds: initialValues?.hasFinancialNeeds || "ALL",
+    financialNeedsFulfilled: initialValues?.financialNeedsFulfilled || "ALL"
   });
 
   const handleApply = () => {
@@ -33,7 +40,10 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
       voteIntent: "ALL",
       tagId: "",
       votedStatus: "ALL",
-      visitedStatus: "ALL"
+      campaignStatus: "ALL",
+      hasRequests: false,
+      hasFinancialNeeds: "ALL",
+      financialNeedsFulfilled: "ALL"
     });
   };
 
@@ -88,20 +98,21 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
                         <Target size={14}/> Termómetro Político
                     </h3>
                     
-                    <div>
-                        <label className="block text-[10px] font-bold text-zinc-500 mb-2">INTENCIÓN DE VOTO</label>
-                        <select 
-                            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2.5 text-sm text-white focus:border-purple-500 outline-none"
-                            value={filters.voteIntent}
-                            onChange={(e) => setFilters({...filters, voteIntent: e.target.value})}
-                        >
-                            <option value="ALL">Mostrar Todos</option>
-                            <option value="SURE">🟢 Voto Seguro</option>
-                            <option value="PROBABLE">🟡 Probable</option>
-                            <option value="UNDECIDED">⚪ Indeciso</option>
-                            <option value="OPPOSITION">🔴 Oposición</option>
-                        </select>
-                    </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-zinc-500 mb-2">INTENCIÓN DE VOTO</label>
+                            <select 
+                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2.5 text-sm text-white focus:border-purple-500 outline-none"
+                                value={filters.voteIntent}
+                                onChange={(e) => setFilters({...filters, voteIntent: e.target.value})}
+                            >
+                                <option value="ALL">Mostrar Todos</option>
+                                <option value="SURE">🟢 Voto Seguro</option>
+                                <option value="PROBABLE">🟡 Probable</option>
+                                <option value="UNDECIDED">⚪ Indeciso</option>
+                                <option value="OPPOSITION">🔴 Oposición</option>
+                                <option value="DOES_NOT_VOTE">⛔ No Vota</option>
+                            </select>
+                        </div>
 
                     <div>
                         <label className="block text-[10px] font-bold text-zinc-500 mb-2">AFILIACIÓN</label>
@@ -150,12 +161,15 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
                             <label className="block text-[10px] font-bold text-zinc-500 mb-1">BITÁCORA / VISITAS</label>
                             <select 
                                 className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-sm text-white focus:border-emerald-500 outline-none"
-                                value={filters.visitedStatus}
-                                onChange={(e) => setFilters({...filters, visitedStatus: e.target.value})}
+                                value={filters.campaignStatus} // Use campaignStatus instead of visitedStatus
+                                onChange={(e) => setFilters({...filters, campaignStatus: e.target.value})}
                             >
-                                <option value="ALL">Todos</option>
-                                <option value="VISITED">🏠 Visitado</option>
-                                <option value="NOT_VISITED">❌ Sin Visitar</option>
+                                <option value="ALL">Todas las situaciones</option>
+                                <option value="NOT_VISITED">❌ No Visitado</option>
+                                <option value="TO_VISIT">📅 Por Visitar</option>
+                                <option value="CONTACTED">📞 Contactado</option>
+                                <option value="VISITED">✅ Visitado</option>
+                                <option value="DO_NOT_DISTURB">⛔ No Molestar</option>
                             </select>
                         </div>
                     </div>

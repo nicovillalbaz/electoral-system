@@ -22,6 +22,7 @@ export async function personsRoutes(app: FastifyInstance) {
     return personsGetUniqueAddresses(campaignId);
   });
   app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
+    // 1. Validamos todos los filtros entrantes
     const queryZ = z
       .object({
         q: z.string().optional(),
@@ -29,18 +30,23 @@ export async function personsRoutes(app: FastifyInstance) {
         limit: z.coerce.number().min(1).optional(),
         sortBy: z.string().optional(),
         sortDir: z.enum(["ASC", "DESC"]).optional(),
-        // Filtros nuevos
+        
+        // Filtros Básicos
         address: z.string().optional(),
         party: z.string().optional(),
         voteIntent: z.string().optional(),
         votedStatus: z.string().optional(),
-        visitedStatus: z.string().optional(),
+        campaignStatus: z.string().optional(), 
         tagId: z.string().optional(),
+        
+        // Filtros Nuevos (Finanzas y Pedidos)
+        hasRequests: z.string().optional(), 
+        hasFinancialNeeds: z.string().optional(), 
+        financialNeedsFulfilled: z.string().optional(), 
       })
       .parse(req.query);
 
-    // Y pásalos a personsList(...)
-
+    // 2. Ejecutamos la consulta limpia
     const campaignId = req.user.campaignId;
     const res = await personsList(campaignId, {
       q: queryZ.q,
@@ -52,8 +58,11 @@ export async function personsRoutes(app: FastifyInstance) {
       party: queryZ.party,
       voteIntent: queryZ.voteIntent,
       votedStatus: queryZ.votedStatus,
-      visitedStatus: queryZ.visitedStatus,
+      campaignStatus: queryZ.campaignStatus, 
       tagId: queryZ.tagId,
+      hasRequests: queryZ.hasRequests,
+      hasFinancialNeeds: queryZ.hasFinancialNeeds,
+      financialNeedsFulfilled: queryZ.financialNeedsFulfilled,
     });
     return res;
   });
@@ -161,6 +170,12 @@ export async function personsRoutes(app: FastifyInstance) {
             .or(z.literal(""))
             .nullable()
             .optional(),
+
+          // Nuevos Campos de Pedidos y Finanzas
+          requests: z.array(z.string()).optional(),
+          hasFinancialNeeds: z.boolean().optional(),
+          financialNeedsFulfilled: z.boolean().optional(),
+          financialAmount: z.number().optional()
         })
         .parse(req.body);
 

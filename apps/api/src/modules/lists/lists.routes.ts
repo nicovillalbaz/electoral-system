@@ -6,7 +6,8 @@ export async function listsRoutes(app: FastifyInstance) {
   
   // GET TODAS
   app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
-    return listsGetAll(req.user.campaignId);
+    const { q } = z.object({ q: z.string().optional() }).parse(req.query);
+    return listsGetAll(req.user.campaignId, q);
   });
 
   // POST CREAR

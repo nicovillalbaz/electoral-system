@@ -17,8 +17,11 @@ export async function personsList(
     party?: string;
     voteIntent?: string;
     votedStatus?: string;
-    visitedStatus?: string;
+    campaignStatus?: string; 
     tagId?: string;
+    hasRequests?: string;
+    hasFinancialNeeds?: string;
+    financialNeedsFulfilled?: string;
   },
 ) {
   const {
@@ -101,11 +104,12 @@ export async function personsList(
   if (params.votedStatus === "VOTED") conditions.push(`p.has_voted = true`);
   if (params.votedStatus === "PENDING") conditions.push(`p.has_voted = false`);
 
-  // 6. Filtro Visitado
-  if (params.visitedStatus === "VISITED")
-    conditions.push(`p.is_visited = true`);
-  if (params.visitedStatus === "NOT_VISITED")
-    conditions.push(`p.is_visited = false`);
+  // 6. Filtro ESTADO/BITÁCORA (Corregido)
+  if (params.campaignStatus && params.campaignStatus !== "ALL") {
+    conditions.push(`p.campaign_status = $${paramIndex}`);
+    queryParams.push(params.campaignStatus);
+    paramIndex++;
+  }
 
   // 7. Filtro Etiqueta
   if (params.tagId) {
@@ -114,6 +118,27 @@ export async function personsList(
     );
     queryParams.push(params.tagId);
     paramIndex++;
+  }
+
+  // 8. Filtro Pedidos (Tiene pedidos?)
+  if (params.hasRequests === 'true') {
+      conditions.push(`jsonb_array_length(p.requests) > 0`);
+  }
+
+  // 9. Filtro Solicitud Financiera
+  if (params.hasFinancialNeeds && params.hasFinancialNeeds !== 'ALL') {
+      const val = params.hasFinancialNeeds === 'true';
+      conditions.push(`p.has_financial_needs = $${paramIndex}`);
+      queryParams.push(val);
+      paramIndex++;
+  }
+
+  // 10. Filtro Ayuda Entregada
+  if (params.financialNeedsFulfilled && params.financialNeedsFulfilled !== 'ALL') {
+      const val = params.financialNeedsFulfilled === 'true';
+      conditions.push(`p.financial_needs_fulfilled = $${paramIndex}`);
+      queryParams.push(val);
+      paramIndex++;
   }
 
   // Ordenamiento
@@ -152,6 +177,13 @@ export async function personsList(
         p.needs_transport,
         p.transport_status,
         -- 👆 ------------------------ 👆
+
+        -- NUEVOS CAMPOS DE PEDIDOS Y FINANZAS --
+        p.requests,
+        p.has_financial_needs,
+        p.financial_needs_fulfilled,
+        p.financial_amount,
+        -----------------------------------------
 
         g.document_id, 
         g.first_name, 
@@ -195,7 +227,9 @@ export async function personGet(campaignId: string, id: string) {
         g.location_district,
         g.location_place,
         g.voting_table_number,
-        g.voting_order_number
+        g.voting_order_number,
+        -- Asegurar campos nuevos también aquí aunque p.* debería traerlos, ser explícito ayuda
+        p.requests, p.has_financial_needs, p.financial_needs_fulfilled, p.financial_amount
      FROM persons p 
      JOIN global_citizens g ON p.citizen_id = g.id 
      WHERE p.campaign_id = $1 AND p.id = $2`,
@@ -328,7 +362,12 @@ export async function personUpdate(
       patch.needsTransport !== undefined ||
       patch.exactAddress !== undefined ||
       patch.whatsappNumber !== undefined ||
-      patch.assignedStationId !== undefined
+      patch.assignedStationId !== undefined ||
+      // Nuevos
+      patch.requests !== undefined ||
+      patch.hasFinancialNeeds !== undefined ||
+      patch.financialNeedsFulfilled !== undefined ||
+      patch.financialAmount !== undefined
     ) {
       await client.query(
         `UPDATE persons 
@@ -340,8 +379,15 @@ export async function personUpdate(
              exact_address = COALESCE($6, exact_address),
              whatsapp_number = COALESCE($7, whatsapp_number),
              assigned_station_id = COALESCE($8, assigned_station_id),
+             
+             -- Nuevos Campos
+             requests = COALESCE($9, requests),
+             has_financial_needs = COALESCE($10, has_financial_needs),
+             financial_needs_fulfilled = COALESCE($11, financial_needs_fulfilled),
+             financial_amount = COALESCE($12, financial_amount),
+
              updated_at = NOW()
-         WHERE id = $9 AND campaign_id = $10`,
+         WHERE id = $13 AND campaign_id = $14`,
         [
           sanitize(patch.currentVoteIntent), 
           patch.notes,
@@ -351,6 +397,12 @@ export async function personUpdate(
           patch.exactAddress, // Campo Nuevo
           patch.whatsappNumber, // Campo Nuevo
           sanitize(patch.assignedStationId), // Campo Nuevo
+          
+          patch.requests ? JSON.stringify(patch.requests) : null, // Assuming patch.requests is array or null
+          patch.hasFinancialNeeds,
+          patch.financialNeedsFulfilled,
+          patch.financialAmount,
+
           personId,
           campaignId,
         ],
@@ -377,6 +429,20 @@ export async function personUpdate(
 
     if (newStatus !== undefined && newStatus !== before.campaign_status) {
       changes.push(`Estado: ${newStatus || "Sin visitar"}`);
+    }
+
+    // Logs Nuevos Financieros
+    if (patch.hasFinancialNeeds !== undefined && patch.hasFinancialNeeds !== before.has_financial_needs) {
+         changes.push(patch.hasFinancialNeeds ? "Solicitó Aporte" : "Canceló Solicitud Aporte");
+    }
+    if (patch.financialNeedsFulfilled !== undefined && patch.financialNeedsFulfilled !== before.financial_needs_fulfilled) {
+         changes.push(patch.financialNeedsFulfilled ? "Aporte Entregado" : "Aporte Pendiente");
+    }
+    if (patch.financialAmount !== undefined && patch.financialAmount !== before.financial_amount) {
+         changes.push(`Monto Aporte: ${patch.financialAmount}`);
+    }
+    if (patch.requests && JSON.stringify(patch.requests) !== JSON.stringify(before.requests || [])) {
+         changes.push("Lista de Pedidos actualizada");
     }
 
     if (

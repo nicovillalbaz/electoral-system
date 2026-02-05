@@ -57,6 +57,11 @@ export default function PersonModal({
     notes: "",
     needsTransport: false,
     transportStatus: "PENDING",
+    // New Fields
+    requests: [] as string[],
+    hasFinancialNeeds: false,
+    financialNeedsFulfilled: false,
+    financialAmount: 0
   });
 
   // Load Reference Data
@@ -78,6 +83,12 @@ export default function PersonModal({
                 notes: personToEdit.notes || "",
                 needsTransport: personToEdit.needs_transport || false,
                 transportStatus: personToEdit.transport_status || "PENDING",
+                
+                // Mapeo nuevos campos
+                requests: personToEdit.requests || [],
+                hasFinancialNeeds: personToEdit.has_financial_needs || false,
+                financialNeedsFulfilled: personToEdit.financial_needs_fulfilled || false,
+                financialAmount: personToEdit.financial_amount ? Number(personToEdit.financial_amount) : 0
             });
             fetchTags(personToEdit.id);
             fetchHistory(personToEdit.id);
@@ -88,6 +99,7 @@ export default function PersonModal({
                 phoneNumber: "", whatsappNumber: "", address: "", exactAddress: "",
                 assignedStationId: "", currentVoteIntent: "UNDECIDED", campaignStatus: "NOT_VISITED",
                 notes: "", needsTransport: false, transportStatus: "PENDING",
+                requests: [], hasFinancialNeeds: false, financialNeedsFulfilled: false, financialAmount: 0
             });
             setAssignedTags([]);
             setHistory([]);
@@ -282,6 +294,7 @@ export default function PersonModal({
                                 <option value="PROBABLE">PROBABLE</option>
                                 <option value="UNDECIDED">INDECISO</option>
                                 <option value="OPPOSITION">OPOSICIÓN</option>
+                                <option value="DOES_NOT_VOTE">NO VOTA</option>
                             </select>
                          </div>
                          <div>
@@ -291,6 +304,7 @@ export default function PersonModal({
                                 <option value="TO_VISIT">POR VISITAR</option>
                                 <option value="CONTACTED">CONTACTADO</option>
                                 <option value="VISITED">VISITADO</option>
+                                <option value="DO_NOT_DISTURB">⛔ NO MOLESTAR</option>
                             </select>
                          </div>
                     </div>
@@ -298,19 +312,79 @@ export default function PersonModal({
                          <label className="block text-xs font-bold text-zinc-500 mb-1">NOTAS</label>
                          <textarea className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white h-20 outline-none resize-none" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="..." />
                     </div>
-                    {/* INCENTIVOS (SOLO EDITAR) */}
-                    {isEditing && (
-                        <div>
-                             <label className="block text-xs font-bold text-amber-500 mb-1">🎁 INCENTIVOS / PEDIDOS</label>
-                             <textarea className="w-full bg-amber-950/20 border border-amber-900/50 rounded p-2.5 text-amber-200 h-16 outline-none resize-none placeholder-amber-900" 
-                                placeholder="Registrar pedidos o incentivos entregados..." 
-                                // Nota: Asumo que usaremos 'notes' o un campo nuevo. Por ahora reutilizo una variable visual, pero idealmente debería ser un campo real.
-                                // Al no tener un campo 'incentive' en el state, voy a comentar el value y onChange por ahora para evitar errores de compilación
-                                // value={formData.incentive} onChange={e => ...}
-                             />
-                             <p className="text-[10px] text-amber-700 mt-1">* Se guardará en el registro de incentivos automáticamente.</p>
-                        </div>
-                    )}
+                    {/* PEDIDOS (LISTA) */}
+                    <div>
+                         <label className="block text-xs font-bold text-zinc-500 mb-2">📋 PEDIDOS (Medicamentos, remeras, etc.)</label>
+                         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                             <div className="p-2 border-b border-zinc-800 flex gap-2">
+                                <input 
+                                    className="flex-1 bg-black border border-zinc-700 rounded px-2 py-1 text-sm text-white outline-none placeholder-zinc-600"
+                                    placeholder="Escribir pedido..."
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            const val = e.currentTarget.value.trim();
+                                            if (val) {
+                                                setFormData({ ...formData, requests: [...formData.requests, val] });
+                                                e.currentTarget.value = "";
+                                            }
+                                        }
+                                    }}
+                                />
+                                <button type="button" className="text-xs font-bold bg-zinc-800 px-3 rounded hover:bg-zinc-700 text-white">AGREGAR</button>
+                             </div>
+                             <div className="p-2 max-h-32 overflow-y-auto space-y-1">
+                                {formData.requests.length === 0 && <p className="text-xs text-zinc-600 italic text-center py-2">- Sin pedidos registrados -</p>}
+                                {formData.requests.map((req, idx) => (
+                                    <div key={idx} className="flex justify-between items-center text-sm bg-zinc-950/50 px-2 py-1 rounded border border-zinc-800/50">
+                                        <span className="text-zinc-300">{req}</span>
+                                        <button type="button" onClick={() => setFormData({...formData, requests: formData.requests.filter((_, i) => i !== idx)})} className="text-red-500 hover:bg-red-950/30 p-1 rounded"><X size={12} /></button>
+                                    </div>
+                                ))}
+                             </div>
+                         </div>
+                    </div>
+
+                    {/* FINANCIERO */}
+                    <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-3">
+                         <div className="flex items-center gap-3">
+                            <h3 className="text-xs font-bold text-emerald-500 flex items-center gap-2">¿💵? APORTE MONETARIO</h3>
+                            <button 
+                                type="button" 
+                                onClick={() => setFormData({...formData, hasFinancialNeeds: !formData.hasFinancialNeeds})}
+                                className={`w-10 h-5 rounded-full relative transition-colors ${formData.hasFinancialNeeds ? "bg-emerald-500" : "bg-zinc-700"}`}
+                            >
+                                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${formData.hasFinancialNeeds ? "left-6" : "left-1"}`} />
+                            </button>
+                         </div>
+
+                         {formData.hasFinancialNeeds && (
+                             <div className="pl-4 border-l-2 border-emerald-900/30 space-y-3 animate-in slide-in-from-top-2">
+                                <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={formData.financialNeedsFulfilled}
+                                        onChange={(e) => setFormData({...formData, financialNeedsFulfilled: e.target.checked})}
+                                        className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-emerald-500" 
+                                    />
+                                    <span>¿Ya recibió el aporte? (Obtuvo)</span>
+                                </label>
+                                
+                                {formData.financialNeedsFulfilled && (
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-zinc-500 mb-1">MONTO ENTREGADO (Gs.)</label>
+                                        <input 
+                                            type="number" 
+                                            className="w-full bg-black border border-emerald-900/50 rounded p-2 text-white font-mono outline-none focus:border-emerald-500 text-right" 
+                                            placeholder="0"
+                                            value={formData.financialAmount}
+                                            onChange={(e) => setFormData({...formData, financialAmount: Number(e.target.value)})}
+                                        />
+                                    </div>
+                                )}
+                             </div>
+                         )}
+                    </div>
                 </div>
 
              </form>

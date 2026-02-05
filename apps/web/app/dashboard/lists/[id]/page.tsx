@@ -2,11 +2,11 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation"; // Para leer el ID de la URL
 import { 
-  ArrowLeft, Search, Filter, MoreVertical, Edit, MapPin, Flag, User 
+  ArrowLeft, Search, Filter, MoreVertical, Edit, MapPin, Flag, User, Trash2, Pen, Save, X 
 } from "lucide-react";
 import api from "../../../../lib/api";
-import PersonModal from "../../persons/components/PersonModal"; // Reutilizamos tu modal estrella
-import FilterModal from "../../persons/components/FilterModal"; // Para editar filtros
+import PersonModal from "../../persons/components/PersonModal"; 
+import FilterModal from "../../persons/components/FilterModal"; 
 
 export default function SmartListPage() {
   const params = useParams();
@@ -15,12 +15,16 @@ export default function SmartListPage() {
 
   // ESTADOS
   const [loading, setLoading] = useState(true);
-  const [listData, setListData] = useState<any>(null); // Guardamos nombre y miembros
+  const [listData, setListData] = useState<any>(null); 
   const [members, setMembers] = useState<any[]>([]);
   
+  // States Renaming
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newName, setNewName] = useState("");
+
   // Modales
   const [personToEdit, setPersonToEdit] = useState<any>(null);
-  const [showFilters, setShowFilters] = useState(false); // Para editar la lista
+  const [showFilters, setShowFilters] = useState(false); 
 
   // Cargar datos iniciales
   useEffect(() => {
@@ -30,42 +34,67 @@ export default function SmartListPage() {
   const fetchListMembers = async () => {
     setLoading(true);
     try {
-      // Llamamos al endpoint nuevo
       const res = await api.get(`/lists/${listId}/members`);
       setListData(res.data);
       setMembers(res.data.members);
     } catch (error) {
-      console.error("Error cargando lista", error);
-      // Si falla (ej: borraron la lista), volvemos atrás
-      // router.push("/dashboard/lists"); 
+       // console.error("Error cargando lista", error);
+       // router.push("/dashboard/lists"); 
     } finally {
       setLoading(false);
     }
   };
 
-  // Helper para actualizar filtros de ESTA lista
+  const handleRename = async () => {
+      if (!newName.trim()) return;
+      try {
+          await api.patch(`/lists/${listId}`, { name: newName });
+          setListData({...listData, listName: newName});
+          setIsRenaming(false);
+      } catch (e) {
+          alert("Error al renombrar");
+      }
+  };
+
+  const handleDeleteList = async () => {
+      if (!confirm("¿Estás seguro de ELIMINAR esta lista para siempre?")) return;
+      try {
+          await api.delete(`/lists/${listId}`);
+          router.push("/dashboard/lists"); // Volver al índice de listas (si existiera, sino a dashboard)
+      } catch (e) {
+          alert("Error al eliminar");
+      }
+  };
+
+  // Helper para actualizar filtros
   const handleUpdateListFilters = async (newFilters: any) => {
     try {
         await api.patch(`/lists/${listId}`, { filters: newFilters });
         setShowFilters(false);
-        fetchListMembers(); // Recargar datos con los nuevos filtros
-        
-        // Audit Req: Update URL with params (Optional but requested)
-        // router.push(`?filters=${JSON.stringify(newFilters)}`);
+        fetchListMembers(); 
     } catch (e) {
         alert("Error actualizando la lista");
     }
   };
 
   const [availableAddresses, setAvailableAddresses] = useState<string[]>([]);
+  const [availableTags, setAvailableTags] = useState<any[]>([]);
   
   useEffect(() => {
-      // Load unique options for dropdowns
-      api.get('/territory/neighborhoods').then(res => {
-          // Assuming res.data is array of objects { name: "X" }
-          // We map to strings
-          setAvailableAddresses(res.data.map((n:any) => n.name));
-      }).catch(err => console.error("Failed to load neighborhoods", err));
+      const fetchData = async () => {
+        try {
+            // 1. Ubicaciones
+            const resAddr = await api.get('/persons/addresses');
+            setAvailableAddresses(resAddr.data);
+
+            // 2. Etiquetas
+            const resTags = await api.get('/tags');
+            setAvailableTags(resTags.data);
+        } catch(e) {
+            console.error("Error loading master data", e);
+        }
+      };
+      fetchData();
   }, []);
 
   return (
@@ -81,15 +110,33 @@ export default function SmartListPage() {
                 {loading ? (
                     <div className="h-8 w-48 bg-zinc-800 rounded animate-pulse"/>
                 ) : (
-                    <h1 className="text-2xl font-black text-white flex items-center gap-2">
-                        {listData?.listName} 
-                        <span className="text-xs font-normal bg-blue-900/30 text-blue-400 px-2 py-1 rounded-full border border-blue-800">
-                            Lista Inteligente
-                        </span>
-                    </h1>
+                    <div className="flex items-center gap-3">
+                         {isRenaming ? (
+                             <div className="flex items-center gap-2">
+                                 <input 
+                                    className="bg-black border border-zinc-700 rounded px-2 py-1 text-xl font-bold text-white outline-none focus:border-blue-500"
+                                    value={newName}
+                                    onChange={(e) => setNewName(e.target.value)}
+                                    autoFocus
+                                 />
+                                 <button onClick={handleRename} className="p-1 bg-green-900/50 text-green-400 rounded hover:bg-green-900"><Save size={18}/></button>
+                                 <button onClick={() => setIsRenaming(false)} className="p-1 bg-red-900/50 text-red-400 rounded hover:bg-red-900"><X size={18}/></button>
+                             </div>
+                         ) : (
+                            <h1 className="text-2xl font-black text-white flex items-center gap-2 group relative">
+                                {listData?.listName}
+                                <span className="text-xs font-normal bg-blue-900/30 text-blue-400 px-2 py-1 rounded-full border border-blue-800">
+                                    Lista Inteligente
+                                </span>
+                                <button onClick={() => { setIsRenaming(true); setNewName(listData?.listName); }} className="opacity-0 group-hover:opacity-100 p-1 text-zinc-500 hover:text-white transition-opacity">
+                                    <Pen size={14} />
+                                </button>
+                            </h1>
+                         )}
+                    </div>
                 )}
                 <p className="text-zinc-500 text-sm mt-1">
-                    {loading ? "Cargando..." : `${listData?.total || 0} personas cumplen los criterios`}
+                    {loading ? "Cargando..." : `${listData?.total || 0} personas buscan este criterio`}
                 </p>
             </div>
         </div>
@@ -99,7 +146,14 @@ export default function SmartListPage() {
                 onClick={() => setShowFilters(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-300 hover:text-white hover:border-zinc-600 transition-colors text-sm font-bold"
             >
-                <Filter size={16}/> Editar Criterios
+                <Filter size={16}/> Criterios
+            </button>
+            <div className="h-8 w-[1px] bg-zinc-800 mx-2"></div>
+             <button 
+                onClick={handleDeleteList}
+                className="flex items-center gap-2 px-4 py-2 bg-red-950/20 border border-red-900/30 rounded-lg text-red-400 hover:bg-red-900/40 hover:text-red-200 transition-colors text-sm font-bold"
+            >
+                <Trash2 size={16}/> Eliminar Lista
             </button>
         </div>
       </div>
@@ -194,9 +248,10 @@ export default function SmartListPage() {
         isOpen={showFilters}
         onClose={() => setShowFilters(false)}
         onApply={handleUpdateListFilters}
-        // Pasamos los valores actuales para que el modal se pre-llene (TODO: FilterModal debe aceptar valores iniciales)
-        availableAddresses={[]}
-        availableTags={[]}
+        // Pasamos los valores actuales para que el modal se pre-llene
+        initialValues={listData?.filters}
+        availableAddresses={availableAddresses}
+        availableTags={availableTags}
       />
 
     </div>

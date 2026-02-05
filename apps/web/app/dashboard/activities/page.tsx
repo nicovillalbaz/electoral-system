@@ -175,7 +175,28 @@ export default function ActivitiesPage() {
       );
   };
 
+  const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [showModal, setShowModal] = useState(false);
+
+  const openCreate = () => {
+      setTaskToEdit(null);
+      setShowModal(true);
+  };
+
+  const openEdit = (task: Task) => {
+      setTaskToEdit(task);
+      setShowModal(true);
+  };
+
+  const handleDelete = async (taskId: string) => {
+      if(!confirm("¿Estás seguro de eliminar esta actividad?")) return;
+      try {
+          await api.delete(`/tasks/${taskId}`);
+          setTasks(prev => prev.filter(t => t.id !== taskId));
+      } catch(e) {
+          alert("Error al eliminar");
+      }
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -186,12 +207,12 @@ export default function ActivitiesPage() {
            <h1 className="text-2xl font-black text-white tracking-tight">Agenda & Actividades</h1>
            <p className="text-zinc-400 text-sm">Gestiona visitas, llamadas y eventos de campaña.</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="bg-white hover:bg-zinc-200 text-black px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all">
+        <button onClick={openCreate} className="bg-white hover:bg-zinc-200 text-black px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all">
             <Plus size={18} /> Nueva Tarea
         </button>
       </div>
 
-      <TaskModal isOpen={showModal} onClose={() => setShowModal(false)} onSuccess={fetchTasks} />
+      <TaskModal isOpen={showModal} onClose={() => setShowModal(false)} onSuccess={fetchTasks} taskToEdit={taskToEdit} />
 
       {/* CONTROLS */}
       <div className="flex flex-col md:flex-row gap-4 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
@@ -264,13 +285,19 @@ export default function ActivitiesPage() {
                                 <CheckCircle2 size={14} />
                             </button>
                             
-                            <div className="flex-1 min-w-0">
+                            <div className="flex-1 min-w-0" onClick={() => openEdit(task)} className="cursor-pointer">
                                 <h3 className={clsx("font-bold text-base truncate", task.completed_at ? "text-zinc-500 line-through" : "text-white")}>{task.title}</h3>
                                 <div className="flex items-center gap-3 text-xs text-zinc-500 mt-1">
                                     <span className="flex items-center gap-1">{getTypeIcon(task.task_type)} {task.task_type}</span>
                                     {task.due_date && <span className={clsx("flex items-center gap-1", !task.completed_at && new Date(task.due_date) < new Date() ? "text-red-400" : "")}><Clock size={12} /> {format(parseISO(task.due_date), "dd MMM HH:mm", { locale: es })}</span>}
                                     {task.location_text && <span className="flex items-center gap-1 truncate"><MapPin size={12} /> {task.location_text}</span>}
                                 </div>
+                            </div>
+                            
+                            {/* ACTIONS */}
+                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => openEdit(task)} className="text-zinc-500 hover:text-white p-2 hover:bg-zinc-800 rounded-full text-xs font-bold">EDITAR</button>
+                                <button onClick={() => handleDelete(task.id)} className="text-red-500/50 hover:text-red-500 p-2 hover:bg-red-950/30 rounded-full text-xs font-bold">ELIMINAR</button>
                             </div>
 
                             <span className={clsx("text-[10px] font-black px-2 py-1 rounded border", getPriorityColor(task.priority))}>
