@@ -22,17 +22,8 @@ export default function StationsPage() {
   const loadStations = async () => {
     try {
         const res = await api.get('/stations');
-        // Mocking KPI data if backend doesn't provide it yet
-        // In real scenario, backend should return { ...station, assigned_count: 100, voted_count: 50 }
-        // For now we map it optimistically or wait for backend update. 
-        // Assuming raw list, we might need a separate endpoint for KPIs or modify the repo.
-        // User asked to "Convertir la vista simple en un Monitor de Rendimiento".
-        // I will trust the backend might return basic info, else I show zeros.
-        setStations(res.data.map((s: any) => ({
-            ...s,
-            assigned_count: s.assigned_count || Math.floor(Math.random() * 500) + 100, // Fallback/Mock for demo
-            voted_count: s.voted_count || Math.floor(Math.random() * 100)
-        })));
+        // Backend now returns assigned_count and voted_count
+        setStations(res.data);
     } catch (e) {
         console.error(e);
     } finally {

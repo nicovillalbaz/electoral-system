@@ -1,8 +1,6 @@
 import { memo, useState, useRef, useEffect } from "react";
-import { Check, User, MapPin, Truck, AlertTriangle, DollarSign, ChevronDown, CheckCircle, X, Flag, Vote } from "lucide-react";
+import { Check, User, MapPin, Truck, AlertTriangle, DollarSign, ChevronDown, CheckCircle, X, Flag, Vote, Save } from "lucide-react";
 import safeApi from "../../../../lib/api";
-import { toast } from "sonner"; // Assuming sonner is used, or basic alert if not. 
-// If no sonner, we'll use a simple custom indicator or just console.
 
 type Voter = {
     id: string;
@@ -52,6 +50,14 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
     const [openPopover, setOpenPopover] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
+    // Temp State for Inputs
+    const [tempStationId, setTempStationId] = useState("");
+    const [tempPassedPC, setTempPassedPC] = useState(false);
+    
+    const [tempFinance, setTempFinance] = useState({ active: false, amount: 0 });
+    const [tempNotes, setTempNotes] = useState("");
+    const [tempLogistics, setTempLogistics] = useState<{subtypes: string[], responsible: string}>({ subtypes: [], responsible: "" });
+
     // Click Outside Handler
     const rowRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -64,27 +70,95 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const handleQuickUpdate = async (patch: any, close = false) => {
+    // Initialize temp state when opening a popover
+    useEffect(() => {
+        if (!openPopover) return;
+
+        if (openPopover === 'PC') {
+            setTempStationId(voter.assigned_station_id || "");
+            setTempPassedPC(voter.campaign_status === 'VISITED_PC' || !!voter.station_checkin_at);
+        }
+        if (openPopover === 'FINANCE') {
+            setTempFinance({ 
+                active: voter.has_financial_needs || false, 
+                amount: voter.financial_amount || 0 
+            });
+        }
+        if (openPopover === 'NOTES') {
+            setTempNotes(voter.notes || "");
+        }
+        if (openPopover === 'LOGISTICS') {
+            const requests = voter.requests || [];
+            const logReq = requests.find((r:any) => r.type === 'LOGISTICS');
+            setTempLogistics({
+                subtypes: logReq?.subtypes || [],
+                responsible: logReq?.responsible || ""
+            });
+        }
+    }, [openPopover, voter]);
+
+
+    const handleSave = async () => {
         setLoading(true);
+        const patch: any = {};
+        let shouldClose = true;
+
         try {
+            if (openPopover === 'PC') {
+                patch.assignedStationId = tempStationId;
+                if (tempPassedPC) {
+                    patch.campaignStatus = 'VISITED_PC';
+                } else if (!tempPassedPC && voter.campaign_status === 'VISITED_PC') {
+                    patch.campaignStatus = 'PENDING'; // Or whatever default
+                }
+            }
+
+            if (openPopover === 'FINANCE') {
+                patch.hasFinancialNeeds = tempFinance.active;
+                patch.financialAmount = tempFinance.amount;
+            }
+
+            if (openPopover === 'NOTES') {
+                patch.notes = tempNotes;
+            }
+
+            if (openPopover === 'LOGISTICS') {
+                const requests = voter.requests ? [...voter.requests] : [];
+                // Remove existing logistics
+                const otherRequests = requests.filter((r:any) => r.type !== 'LOGISTICS');
+                
+                if (tempLogistics.subtypes.length > 0) {
+                    otherRequests.push({ 
+                        type: 'LOGISTICS', 
+                        subtypes: tempLogistics.subtypes, 
+                        responsible: tempLogistics.responsible 
+                    });
+                }
+                patch.requests = otherRequests;
+                // Update flag as well for visual consistency if backend doesn't do it automatically immediately
+                // patch.logistics_flag = tempLogistics.subtypes.length > 0; 
+            }
+
             await safeApi.patch(`/persons/${voter.id}`, patch);
-            
-            // Manual triggers for specific logic
+
+            // Manual trigger for checkin if needed
             if (patch.campaignStatus === 'VISITED_PC' && patch.assignedStationId) {
-                 await safeApi.post('/stations/checkin', { personId: voter.id, stationId: patch.assignedStationId });
+                await safeApi.post('/stations/checkin', { personId: voter.id, stationId: patch.assignedStationId });
             }
 
             onUpdate({ ...voter, ...patch }); // Optimistic
-            if (close) setOpenPopover(null);
+            setOpenPopover(null);
+
         } catch (e) {
             console.error(e);
-            alert("Error al guardar cambios.");
+            alert("Error al guardar cambios. Intente nuevamente.");
+            shouldClose = false;
         } finally {
             setLoading(false);
         }
     };
 
-    const handleStatusChange = async (newStatus: string) => {
+    const handleVoteStatusChange = async (newStatus: string) => {
         setLoading(true);
         try {
             await safeApi.post('/voting/status', { personId: voter.id, status: newStatus });
@@ -97,19 +171,19 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
             setLoading(false);
         }
     };
+    
+    const handleQuickIntent = async (val: string) => {
+        setLoading(true);
+        try {
+            await safeApi.patch(`/persons/${voter.id}`, { currentVoteIntent: val });
+            onUpdate({ ...voter, current_vote_intent: val });
+            setOpenPopover(null);
+        } catch(e) { alert("Error"); setLoading(false); }
+    };
 
     const togglePopover = (name: string, e: React.MouseEvent) => {
         e.stopPropagation(); 
         setOpenPopover(openPopover === name ? null : name);
-    };
-
-    // --- LOGISTICS HELPER ---
-    const getLogisticsState = () => {
-        const requests = voter.requests || [];
-        const logReq = requests.find((r:any) => r.type === 'LOGISTICS');
-        const subtypes = logReq?.subtypes || [];
-        const responsible = logReq?.responsible || "";
-        return { requests, logReq, subtypes, responsible };
     };
 
     // --- RENDER HELPERS ---
@@ -158,11 +232,11 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                         <Vote size={18} />
                     </button>
                     {openPopover === 'STATUS' && (
-                        <div className="absolute right-0 top-full mt-2 w-40 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-1 flex flex-col gap-1 animate-in fade-in zoom-in-95">
+                        <div className="absolute right-0 top-full mt-2 w-40 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-1 flex flex-col gap-1 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
                              {['PENDING', 'ON_TRANSIT', 'CHECKED_IN', 'VOTED'].map(s => (
                                  <button
                                     key={s}
-                                    onClick={(e) => { e.stopPropagation(); handleStatusChange(s); }}
+                                    onClick={(e) => { e.stopPropagation(); handleVoteStatusChange(s); }}
                                     className={`text-[10px] font-bold px-3 py-2 rounded text-left hover:bg-white/10 ${voter.status_day_d === s ? 'text-white bg-white/5' : 'text-zinc-400'}`}
                                  >
                                      {statusLabels[s]}
@@ -185,12 +259,12 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                         {pcStat.passed && <CheckCircle size={10} className="absolute top-1 right-1" />}
                     </button>
                     {openPopover === 'PC' && (
-                        <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-2 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                        <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-3 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
                             <label className="text-xs font-bold text-zinc-500">ASIGNAR PC</label>
                             <select 
                                 className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
-                                defaultValue={voter.assigned_station_id || ""}
-                                onChange={(e) => handleQuickUpdate({ assignedStationId: e.target.value })}
+                                value={tempStationId}
+                                onChange={(e) => setTempStationId(e.target.value)}
                             >
                                 <option value="">-- Sin Asignar --</option>
                                 {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -198,12 +272,19 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                             <div className="flex justify-between items-center bg-zinc-950 p-2 rounded border border-zinc-800">
                                 <span className="text-xs font-bold text-zinc-400">YA PASÓ POR PC?</span>
                                 <button 
-                                    onClick={() => handleQuickUpdate({ campaignStatus: pcStat.passed ? 'NOT_VISITED' : 'VISITED_PC', assignedStationId: voter.assigned_station_id })}
-                                    className={`px-3 py-1 rounded text-xs font-bold transition-colors ${pcStat.passed ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-500'}`}
+                                    onClick={() => setTempPassedPC(!tempPassedPC)}
+                                    className={`px-3 py-1 rounded text-xs font-bold transition-colors ${tempPassedPC ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-500'}`}
                                 >
-                                    {pcStat.passed ? 'SÍ, PASÓ' : 'NO'}
+                                    {tempPassedPC ? 'SÍ, PASÓ' : 'NO'}
                                 </button>
                             </div>
+                            <button 
+                                onClick={handleSave}
+                                disabled={loading}
+                                className="w-full bg-white text-black font-bold text-xs py-2 rounded hover:bg-zinc-200 flex justify-center items-center gap-2"
+                            >
+                                {loading ? '...' : 'GUARDAR CAMBIOS'} <Check size={14} />
+                            </button>
                         </div>
                     )}
                 </div>
@@ -230,7 +311,7 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                             ].map(opt => (
                                 <button
                                     key={opt.val}
-                                    onClick={() => handleQuickUpdate({ currentVoteIntent: opt.val }, true)}
+                                    onClick={() => handleQuickIntent(opt.val)}
                                     className={`text-left text-xs font-bold p-2 rounded hover:bg-white/10 ${voter.current_vote_intent === opt.val ? 'bg-white/5 text-white' : 'text-zinc-400'}`}
                                 >
                                     {opt.label}
@@ -249,25 +330,32 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                         <DollarSign size={16} />
                     </button>
                     {openPopover === 'FINANCE' && (
-                        <div className="absolute right-0 top-full mt-2 w-56 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-2 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                        <div className="absolute right-0 top-full mt-2 w-56 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-3 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
                              <div className="flex justify-between">
                                 <span className="text-xs font-bold text-zinc-400">Solicita Viático?</span>
                                 <input 
                                     type="checkbox" 
-                                    checked={voter.has_financial_needs} 
-                                    onChange={(e) => handleQuickUpdate({ hasFinancialNeeds: e.target.checked })}
+                                    checked={tempFinance.active} 
+                                    onChange={(e) => setTempFinance({ ...tempFinance, active: e.target.checked })}
                                     className="accent-emerald-500"
                                 />
                              </div>
-                             {voter.has_financial_needs && (
+                             {tempFinance.active && (
                                  <input 
                                      type="number" 
                                      placeholder="Monto Gs."
                                      className="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
-                                     defaultValue={voter.financial_amount}
-                                     onBlur={(e) => handleQuickUpdate({ financialAmount: Number(e.target.value) })}
+                                     value={tempFinance.amount}
+                                     onChange={(e) => setTempFinance({ ...tempFinance, amount: Number(e.target.value) })}
                                  />
                              )}
+                             <button 
+                                onClick={handleSave}
+                                disabled={loading}
+                                className="w-full bg-white text-black font-bold text-xs py-2 rounded hover:bg-zinc-200 flex justify-center items-center gap-2"
+                            >
+                                {loading ? '...' : 'GUARDAR'} <Check size={14} />
+                            </button>
                         </div>
                     )}
                 </div>
@@ -281,7 +369,7 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                         <Truck size={16} />
                     </button>
                      {openPopover === 'LOGISTICS' && (
-                        <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-2 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                        <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-3 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
                              <label className="text-xs font-bold text-zinc-500">LOGÍSTICA REQUERIDA</label>
                              <div className="grid grid-cols-2 gap-2 mb-2">
                                 {[
@@ -290,19 +378,16 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                                     { id: 'SNACK', label: 'REFRIGERIO' },
                                     { id: 'ACCOMPANIMENT', label: 'ACOMPAÑAMIENTO' },
                                 ].map(t => {
-                                    const { requests, logReq, subtypes, responsible } = getLogisticsState();
-                                    const isActive = subtypes.includes(t.id);
+                                    const isActive = tempLogistics.subtypes.includes(t.id);
                                     
                                     return (
                                         <button 
                                             key={t.id}
                                             onClick={() => {
-                                                const newSubtypes = isActive ? subtypes.filter((x:string) => x !== t.id) : [...subtypes, t.id];
-                                                const otherRequests = requests.filter((r:any) => r.type !== 'LOGISTICS');
-                                                if (newSubtypes.length > 0) {
-                                                    otherRequests.push({ type: 'LOGISTICS', subtypes: newSubtypes, responsible });
-                                                }
-                                                handleQuickUpdate({ requests: otherRequests });
+                                                const newSubtypes = isActive 
+                                                    ? tempLogistics.subtypes.filter(x => x !== t.id) 
+                                                    : [...tempLogistics.subtypes, t.id];
+                                                setTempLogistics({ ...tempLogistics, subtypes: newSubtypes });
                                             }}
                                             className={`text-[10px] font-bold p-2 rounded border ${isActive ? 'bg-blue-900/40 border-blue-500 text-blue-300' : 'border-zinc-800 text-zinc-500'}`}
                                         >
@@ -313,20 +398,23 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                              </div>
                              
                              {/* Responsible Field */}
-                             {(getLogisticsState().subtypes.length > 0) && (
+                             {(tempLogistics.subtypes.length > 0) && (
                                 <input 
                                     type="text"
                                     placeholder="Responsable / Encargado"
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-xs text-white placeholder:text-zinc-600 focus:border-blue-500 outline-none"
-                                    defaultValue={getLogisticsState().responsible}
-                                    onBlur={(e) => {
-                                        const { requests, subtypes } = getLogisticsState();
-                                        const otherRequests = requests.filter((r:any) => r.type !== 'LOGISTICS');
-                                        otherRequests.push({ type: 'LOGISTICS', subtypes, responsible: e.target.value });
-                                        handleQuickUpdate({ requests: otherRequests });
-                                    }}
+                                    value={tempLogistics.responsible}
+                                    onChange={(e) => setTempLogistics({ ...tempLogistics, responsible: e.target.value })}
                                 />
                              )}
+
+                            <button 
+                                onClick={handleSave}
+                                disabled={loading}
+                                className="w-full bg-white text-black font-bold text-xs py-2 rounded hover:bg-zinc-200 flex justify-center items-center gap-2"
+                            >
+                                {loading ? '...' : 'GUARDAR'} <Check size={14} />
+                            </button>
                         </div>
                     )}
                 </div>
@@ -340,13 +428,20 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                         <AlertTriangle size={16} />
                     </button>
                     {openPopover === 'NOTES' && (
-                        <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-2 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                        <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-3 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
                              <label className="text-xs font-bold text-zinc-500">NOTAS / OBSERVACIONES</label>
                              <textarea 
                                 className="bg-zinc-950 border border-zinc-800 rounded p-2 text-xs text-white h-20 resize-none"
-                                defaultValue={voter.notes || ""}
-                                onBlur={(e) => handleQuickUpdate({ notes: e.target.value })}
+                                value={tempNotes}
+                                onChange={(e) => setTempNotes(e.target.value)}
                              />
+                             <button 
+                                onClick={handleSave}
+                                disabled={loading}
+                                className="w-full bg-white text-black font-bold text-xs py-2 rounded hover:bg-zinc-200 flex justify-center items-center gap-2"
+                            >
+                                {loading ? '...' : 'GUARDAR'} <Check size={14} />
+                            </button>
                         </div>
                     )}
                 </div>

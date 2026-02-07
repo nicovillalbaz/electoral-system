@@ -18,11 +18,23 @@ export async function stationCreate(campaignId: string, data: any) {
 }
 
 export async function stationList(campaignId: string) {
+  // Enhanced query with KPIs
   const res = await query(
-    `SELECT * FROM stations WHERE campaign_id=$1 AND deleted_at IS NULL ORDER BY name`,
+    `SELECT s.*,
+        (SELECT COUNT(*) FROM persons p WHERE p.assigned_station_id = s.id AND p.campaign_id = $1) as assigned_count,
+        (SELECT COUNT(*) FROM persons p WHERE p.assigned_station_id = s.id AND p.campaign_id = $1 AND (p.status_day_d = 'VOTED' OR p.has_voted = true)) as voted_count
+     FROM stations s 
+     WHERE s.campaign_id=$1 AND s.deleted_at IS NULL 
+     ORDER BY s.name`,
     [campaignId]
   );
-  return res.rows;
+  
+  // Cast counts to number because Postgres count returns string
+  return res.rows.map(r => ({
+      ...r,
+      assigned_count: parseInt(r.assigned_count),
+      voted_count: parseInt(r.voted_count)
+  }));
 }
 
 export async function stationDelete(campaignId: string, id: string) {
@@ -100,5 +112,127 @@ export async function checkInToStation(campaignId: string, stationId: string, pe
     // User asked for "Checkin Logic". 
     // Let's also update the person's campaign_status if it's "lower" than checked in?
     // Actually, let's just log event.
+    // ... existing code ...
+    // Also update Person to ensure "campaign_status" or similar reflects this?
+    // "Pasó por PC" might be `campaign_status = 'VISITED_PC'` or just reliance on this table.
+    // User asked for "Checkin Logic". 
+    // Let's also update the person's campaign_status if it's "lower" than checked in?
+    // Actually, let's just log event.
     return { success: (res.rowCount ?? 0) > 0 };
+}
+
+// --- TEAM MANAGEMENT ---
+
+export async function addCollaborator(campaignId: string, stationId: string, personId: string, role: string) {
+    const res = await query(
+        `INSERT INTO station_collaborators (station_id, person_id, role)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (station_id, person_id) DO UPDATE SET role = EXCLUDED.role
+         RETURNING *`,
+        [stationId, personId, role]
+    );
+    return res.rows[0];
+}
+
+export async function removeCollaborator(campaignId: string, stationId: string, personId: string) {
+    await query(
+        `DELETE FROM station_collaborators WHERE station_id=$1 AND person_id=$2`,
+        [stationId, personId]
+    );
+    return { success: true };
+}
+
+// --- DASHBOARD ---
+
+export async function getStationDashboard(campaignId: string, stationId: string, page: number = 1, limit: number = 50, search: string = '') {
+    const offset = (page - 1) * limit;
+
+    // 1. Collaborators
+    const collaborators = await query(
+        `SELECT sc.*, p.first_name, p.last_name, p.document_id
+         FROM station_collaborators sc
+         JOIN persons p ON sc.person_id = p.id
+         WHERE sc.station_id=$1`,
+        [stationId]
+    );
+
+    // 2. Stats (Simple aggregation)
+    const statsQuery = await query(
+        `SELECT 
+            COUNT(*) FILTER (WHERE assigned_station_id=$1) as total_assigned,
+            COUNT(*) FILTER (WHERE assigned_station_id=$1 AND campaign_status='VISITED_PC') as total_visited_pc,
+            COUNT(*) FILTER (WHERE assigned_station_id=$1 AND (status_day_d='VOTED' OR has_voted=true)) as total_voted
+         FROM persons
+         WHERE campaign_id=$2`, 
+        [stationId, campaignId]
+    );
+    // Note: The stats query implies we only count assigned people. If check-ins include people NOT assigned, we'd need a different query.
+    // For now, focusing on the "Master Grid" of assigned people as requested.
+
+    // 3. Voters (Paginated & Searched)
+    let whereClause = `campaign_id=$1 AND assigned_station_id=$2`;
+    const params: any[] = [campaignId, stationId];
+
+    if (search) {
+        whereClause += ` AND (first_name ILIKE $3 OR last_name ILIKE $3 OR document_id ILIKE $3)`;
+        params.push(`%${search}%`);
+    }
+
+    const votersQuery = await query(
+        `SELECT id, first_name, last_name, document_id, voting_table_number, 
+                campaign_status, status_day_d, requests, notes,
+                has_financial_needs, financial_amount, financial_needs_fulfilled,
+                current_vote_intent
+         FROM persons
+         WHERE ${whereClause}
+         ORDER BY last_name, first_name
+         LIMIT ${limit} OFFSET ${offset}`,
+        params
+    );
+    
+    // Total count for pagination
+    const countQuery = await query(
+        `SELECT COUNT(*) as val FROM persons WHERE ${whereClause}`,
+        params
+    );
+
+    // Process Flags & Details efficiently
+    const processedVoters = votersQuery.rows.map(v => {
+        const reqs = v.requests || [];
+        const logReq = reqs.find((r:any) => r.type === 'LOGISTICS');
+        const subtypes = logReq?.subtypes || [];
+        const logResponsible = logReq?.responsible || null;
+        const logStatus = logReq?.status || 'PENDING';
+
+        return {
+            ...v,
+            logistics: {
+                has_needs: subtypes.length > 0,
+                subtypes: subtypes,
+                responsible: logResponsible,
+                status: logStatus,
+                // flags for quick icons
+                has_fuel: subtypes.includes('FUEL'),
+                has_transport: subtypes.includes('TRANSPORT'),
+                has_snack: subtypes.includes('SNACK'),
+                has_accompaniment: subtypes.includes('ACCOMPANIMENT'),
+            },
+            financial: {
+                has_needs: v.has_financial_needs,
+                amount: v.financial_amount,
+                fulfilled: v.financial_needs_fulfilled
+            }
+        };
+    });
+
+    return {
+        collaborators: collaborators.rows,
+        stats: statsQuery.rows[0],
+        voters: {
+            data: processedVoters,
+            total: parseInt(countQuery.rows[0].val),
+            page,
+            limit
+        }
+    };
 }

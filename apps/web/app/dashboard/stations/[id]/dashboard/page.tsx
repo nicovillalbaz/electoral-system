@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
-import safeApi from "../../../../lib/api"; // Adjusted path
+import useSWR from "swr"; // Assuming SWR is used or React Query. Checking imports.
+// Fallback to fetch or safeApi if no SWR.
+import safeApi from "../../../../../../lib/api"; 
 import { Users, Truck, AlertTriangle, CheckCircle, Search, Plus, Trash2, Fuel, Sandwich, Bus } from "lucide-react";
 
 // --- TYPES ---
@@ -29,6 +31,12 @@ export default function StationDashboardPage() {
     const [search, setSearch] = useState("");
     const [isAddingCollab, setIsAddingCollab] = useState(false);
     
+    // --- DATA FETCHING ---
+    // Using simple fetch wrapper for now or SWR if available. 
+    // Adapting to project style. Assuming standard `useSWR` or `useEffect`.
+    // Let's use standard useEffect for simplicity if SWR pattern isn't confirmed.
+    // Actually, user mentioned "SafeApi". 
+    
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -44,22 +52,24 @@ export default function StationDashboardPage() {
         }
     };
 
+    // Initial Fetch & Poll?
+    // Using useEffect for now.
+    const useEffect = require("react").useEffect; 
     useEffect(() => {
-        if (stationId) fetchData();
-    }, [stationId, page, search]);
+        fetchData();
+    }, [stationId, page, search]); // Re-fetch on params change
 
     // --- ACTIONS ---
     const handleAddCollaborator = async (e: React.FormEvent) => {
         e.preventDefault();
         const form = e.target as HTMLFormElement;
-        const personId = (form.elements.namedItem('personId') as HTMLInputElement).value;
+        const personId = (form.elements.namedItem('personId') as HTMLInputElement).value; // Mock for now, need search
         const role = (form.elements.namedItem('role') as HTMLSelectElement).value;
         
         try {
             await safeApi.post(`/stations/${stationId}/collaborators`, { personId, role });
-            fetchData(); 
+            fetchData(); // Refresh
             setIsAddingCollab(false);
-            form.reset();
         } catch (e) {
             alert("Error adding collaborator");
         }

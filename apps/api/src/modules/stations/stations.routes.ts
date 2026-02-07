@@ -37,8 +37,38 @@ export async function stationsRoutes(app: FastifyInstance) {
        }).parse(req.body);
 
        // We need to import checkInToStation from repo.
-       // I'll add the import line in a separate edit or just assume it's exposed.
-       // For now let's just add the route and I'll fix the import.
        return checkInToStation(req.user.campaignId, body.stationId, body.personId, req.user.userId);
+  });
+
+  // --- DASHBOARD ENDPOINTS ---
+
+  app.get("/:id/dashboard", { preHandler: [app.requireAuth] }, async (req: any) => {
+    const params = z.object({ id: z.string().uuid() }).parse(req.params);
+    const query = z.object({
+        page: z.coerce.number().min(1).default(1),
+        limit: z.coerce.number().min(1).max(100).default(50),
+        search: z.string().optional().default('')
+    }).parse(req.query);
+    
+    // Need to import getStationDashboard
+    const { getStationDashboard } = require("./stations.repo"); 
+    return getStationDashboard(req.user.campaignId, params.id, query.page, query.limit, query.search);
+  });
+
+  app.post("/:id/collaborators", { preHandler: [app.requireAuth] }, async (req: any) => {
+    const params = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = z.object({
+        personId: z.string().uuid(),
+        role: z.string()
+    }).parse(req.body);
+
+    const { addCollaborator } = require("./stations.repo");
+    return addCollaborator(req.user.campaignId, params.id, body.personId, body.role);
+  });
+
+  app.delete("/:id/collaborators/:personId", { preHandler: [app.requireAuth] }, async (req: any) => {
+    const params = z.object({ id: z.string().uuid(), personId: z.string().uuid() }).parse(req.params);
+    const { removeCollaborator } = require("./stations.repo");
+    return removeCollaborator(req.user.campaignId, params.id, params.personId);
   });
 }
