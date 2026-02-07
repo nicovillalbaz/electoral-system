@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { listEvents } from "./events.repo";
+import { listEvents, logEvent } from "./events.repo";
 
 export async function eventsRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
@@ -19,4 +19,26 @@ export async function eventsRoutes(app: FastifyInstance) {
       limit: q.limit ?? 200
     });
   });
+
+  app.post("/report", { preHandler: [app.requireAuth] }, async (req: any) => {
+      const body = z.object({
+          type: z.string(),
+          description: z.string().optional(),
+          severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional().default('MEDIUM')
+      }).parse(req.body);
+  
+      await logEvent({
+          campaignId: req.user.campaignId,
+          eventType: 'INCIDENT_REPORT',
+          actorUserId: req.user.userId,
+          stationId: undefined, 
+          payload: {
+              subType: body.type,
+              description: body.description,
+              severity: body.severity
+          }
+      });
+  
+      return { success: true };
+    });
 }

@@ -1,5 +1,6 @@
 import { query, pool } from "../../db/query";
 import { logEvent } from "../events/events.repo";
+import { taskCreate } from "../tasks/tasks.repo";
 // LISTAR TODO EL PADRÓN (Paginado + JOIN con Datos Reales)
 // apps/api/src/modules/persons/persons.repo.ts
 
@@ -183,6 +184,7 @@ export async function personsList(
         p.has_financial_needs,
         p.financial_needs_fulfilled,
         p.financial_amount,
+        p.assigned_station_id,
         -----------------------------------------
 
         g.document_id, 
@@ -321,7 +323,7 @@ export async function personUpdate(
     const currentRes = await client.query(
       `SELECT p.current_vote_intent, p.notes, p.campaign_status, 
                 p.needs_transport, p.transport_status, p.exact_address, p.whatsapp_number, p.assigned_station_id,
-                g.phone_number, g.address, g.location_place 
+                g.phone_number, g.address, g.location_place, g.first_name, g.last_name
          FROM persons p
          JOIN global_citizens g ON p.citizen_id = g.id
          WHERE p.id = $1`,
@@ -334,22 +336,24 @@ export async function personUpdate(
     }
     const before = currentRes.rows[0];
 
-    // 2. Actualizar Global Citizens (Datos Personales Básicos y Barrio)
+    // 2. Actualizar Global Citizens (Datos Personales Básicos y Barrio y AFILIACIÓN)
     if (
       patch.firstName ||
       patch.lastName ||
       patch.phoneNumber ||
       patch.address ||
-      patch.pollingPlace
+      patch.pollingPlace ||
+      patch.partyAffiliation // <--- Nuevo
     ) {
       await client.query(
         `UPDATE global_citizens 
          SET phone_number = COALESCE($1, phone_number),
              address = COALESCE($2, address),
+             party_affiliation = COALESCE($3, party_affiliation),
              updated_at = NOW()
          FROM persons p
-         WHERE global_citizens.id = p.citizen_id AND p.id = $3`,
-        [patch.phoneNumber, patch.address, personId],
+         WHERE global_citizens.id = p.citizen_id AND p.id = $4`,
+        [patch.phoneNumber, patch.address, patch.partyAffiliation, personId],
       );
     }
 
@@ -417,6 +421,7 @@ export async function personUpdate(
 
     if (patch.phoneNumber && patch.phoneNumber !== before.phone_number) changes.push(`Teléfono actualizado`);
     if (patch.address && patch.address !== before.address) changes.push(`Barrio actualizado`);
+    if (patch.partyAffiliation && patch.partyAffiliation !== before.party_affiliation) changes.push(`Afiliación: ${patch.partyAffiliation}`); // <--- Log
     
     // Logs nuevos
     if (patch.exactAddress && patch.exactAddress !== before.exact_address) changes.push(`Dir. Exacta actualizada`);
@@ -434,6 +439,17 @@ export async function personUpdate(
     // Logs Nuevos Financieros
     if (patch.hasFinancialNeeds !== undefined && patch.hasFinancialNeeds !== before.has_financial_needs) {
          changes.push(patch.hasFinancialNeeds ? "Solicitó Aporte" : "Canceló Solicitud Aporte");
+         
+         // AUTOMATIC TASK CREATION (FINANCIAL)
+         if (patch.hasFinancialNeeds && actorUserId) {
+            await taskCreate(campaignId, actorUserId, {
+                title: `Viático / Aporte (${before.first_name} ${before.last_name})`,
+                description: `Solicitado desde Control Día D.\nMonto: ${patch.financialAmount || before.financial_amount || 0} Gs.\nNotas: ${patch.notes || before.notes || ''}`,
+                priority: 'URGENT',
+                taskType: 'FINANCIAL', // Ensure 'FINANCIAL' or 'EVENT' exists in enum, mapping to 'EVENT' if needed or assuming 'FINANCIAL' added
+                relatedPersonId: personId
+            });
+         }
     }
     if (patch.financialNeedsFulfilled !== undefined && patch.financialNeedsFulfilled !== before.financial_needs_fulfilled) {
          changes.push(patch.financialNeedsFulfilled ? "Aporte Entregado" : "Aporte Pendiente");
@@ -442,7 +458,35 @@ export async function personUpdate(
          changes.push(`Monto Aporte: ${patch.financialAmount}`);
     }
     if (patch.requests && JSON.stringify(patch.requests) !== JSON.stringify(before.requests || [])) {
-         changes.push("Lista de Pedidos actualizada");
+         const oldReqs = (before.requests || []) as any[];
+         const newReqs = patch.requests as any[];
+         
+         const newLog = newReqs.find((r:any) => r.type === 'LOGISTICS');
+         const oldLog = oldReqs.find((r:any) => r.type === 'LOGISTICS');
+
+         if (newLog && !oldLog) {
+             changes.push(`Solicitó: ${newLog.subtypes?.join(', ')}`);
+             
+             // AUTOMATIC TASK CREATION (LOGISTICS)
+             if (actorUserId) {
+                const subtypes = newLog.subtypes?.join(', ') || 'General';
+                const resp = newLog.responsible ? ` (Resp: ${newLog.responsible})` : '';
+                await taskCreate(campaignId, actorUserId, {
+                    title: `Logística (${before.first_name} ${before.last_name}): ${subtypes}`,
+                    description: `Solicitud Automática desde Día D.${resp}\nNotas: ${patch.notes || before.notes || ''}`,
+                    priority: 'URGENT',
+                    taskType: 'LOGISTICS',
+                    relatedPersonId: personId
+                });
+             }
+
+         } else if (newLog && oldLog && JSON.stringify(newLog.subtypes) !== JSON.stringify(oldLog.subtypes)) {
+             changes.push(`Cambió items: ${newLog.subtypes?.join(', ')}`);
+         } else if (!newLog && oldLog) {
+             changes.push("Canceló solicitud logística");
+         } else if (JSON.stringify(newReqs) !== JSON.stringify(oldReqs)) {
+             changes.push("Actualizó pedidos");
+         }
     }
 
     if (

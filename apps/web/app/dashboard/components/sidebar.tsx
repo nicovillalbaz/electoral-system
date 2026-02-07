@@ -24,7 +24,7 @@ const MENU_ITEMS = [
   { name: 'Actividades', href: '/dashboard/activities', icon: CalendarDays }, // New Link
   { name: 'Padrón & Votantes', href: '/dashboard/persons', icon: Users },
   { name: 'Listas Inteligentes', icon: List, href: '/dashboard/lists' },
-  { name: 'Control Día D', href: '/dashboard/voting', icon: Siren, className: 'text-red-500' }, // Destacado en Rojo
+  { name: 'Control Día D', href: '/dashboard/voting', icon: Siren, className: 'text-emerald-500' }, // Destacado en Rojo
   { name: 'Puestos (PC)', href: '/dashboard/stations', icon: MapPin },
   { name: 'Equipo & Accesos', href: '/dashboard/users', icon: UserCog },
   { name: 'Auditoría', href: '/dashboard/audit', icon: BarChart3 },
@@ -114,13 +114,13 @@ export default function Sidebar() {
                     "group flex items-center rounded-xl text-sm font-medium transition-all duration-200 border border-transparent",
                     isCollapsed ? "justify-center p-3" : "justify-between px-4 py-3",
                     isActive 
-                        ? 'bg-red-600/10 text-red-500 border-red-600/20 shadow-[0_0_15px_rgba(220,38,38,0.15)]' 
+                        ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]' 
                         : 'text-zinc-400 hover:text-white hover:bg-zinc-900/80'
                 )}
                 title={isCollapsed ? item.name : undefined}
                 >
                 <div className="flex items-center gap-3">
-                    <item.icon size={20} className={isActive ? "text-red-500" : "text-zinc-500 group-hover:text-zinc-300"} />
+                    <item.icon size={20} className={isActive ? "text-emerald-500" : "text-zinc-500 group-hover:text-zinc-300"} />
                     {!isCollapsed && <span>{item.name}</span>}
                 </div>
                 {!isCollapsed && isActive && <ChevronRight size={14} className="opacity-50" />}
@@ -134,7 +134,7 @@ export default function Sidebar() {
             <button 
                 onClick={handleLogout}
                 className={clsx(
-                    "flex items-center rounded-xl text-sm transition-all text-zinc-400 hover:text-red-400 hover:bg-red-950/10",
+                    "flex items-center rounded-xl text-sm transition-all text-zinc-400 hover:text-emerald-400 hover:bg-emerald-950/10",
                     isCollapsed ? "justify-center p-3" : "gap-3 px-4 py-3 w-full"
                 )}
                 title="Cerrar Sesión"

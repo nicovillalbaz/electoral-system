@@ -64,11 +64,27 @@ export async function processQueue() {
       
       // Success! Item is NOT added to remainingQueue
       console.log(`[OfflineQueue] Synced ${item.url}`);
-    } catch (error) {
-      console.error(`[OfflineQueue] Failed to sync ${item.url}`, error);
-      // Keep in queue, increment retry?
+    } catch (error: any) {
+      const status = error.response?.status;
+      
+      // 1. Error Fatal (4xx): Datos inválidos, no autenticado, no encontrado.
+      // NO reintentar. Eliminar de la cola.
+      if (status && status >= 400 && status < 500) {
+          console.error(`[OfflineQueue] 🛑 DISCARDING fatal error ${item.url} (Status ${status})`);
+          
+          if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('offline-error', { 
+                  detail: { message: `Error al sincronizar (Descartado): ${status}` } 
+              }));
+          }
+          // continue loop, do NOT push to remainingQueue
+          continue; 
+      }
+
+      // 2. Error Recuperable (5xx, Network Error)
+      console.error(`[OfflineQueue] ⚠️ Keeping in queue ${item.url}`, error);
       item.retryCount++;
-      if (item.retryCount < 50) { // Keep trying for a long time
+      if (item.retryCount < 50) {
           remainingQueue.push(item); 
       }
     }

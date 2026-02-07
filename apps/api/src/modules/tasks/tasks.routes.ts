@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { notFound } from "../../common/http/errors";
-import { tasksList, taskCreate, taskUpdate, taskDelete } from "./tasks.repo";
+import { tasksList, taskCreate, taskUpdate, taskDelete, taskCompleteWithExpense } from "./tasks.repo";
 
 export async function tasksRoutes(app: FastifyInstance) {
   // 1. LIST TASKS
@@ -9,7 +9,7 @@ export async function tasksRoutes(app: FastifyInstance) {
     const queryZ = z.object({
       q: z.string().optional(),
       priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
-      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS']).optional(),
+      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS', 'FINANCIAL']).optional(),
       assignedUserId: z.string().uuid().optional(),
       relatedPersonId: z.string().uuid().optional(),
       startDate: z.string().datetime().optional(),
@@ -29,7 +29,7 @@ export async function tasksRoutes(app: FastifyInstance) {
       title: z.string().min(1),
       description: z.string().optional(),
       priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
-      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS']).optional(),
+      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS', 'FINANCIAL']).optional(),
       dueDate: z.string().datetime().optional(),
       assignedUserId: z.string().uuid().optional(),
       relatedPersonId: z.string().uuid().optional(),
@@ -48,7 +48,7 @@ export async function tasksRoutes(app: FastifyInstance) {
       title: z.string().optional(),
       description: z.string().optional(),
       priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
-      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS']).optional(),
+      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS', 'FINANCIAL']).optional(),
       dueDate: z.string().datetime().optional(),
       assignedUserId: z.string().uuid().optional(),
       completed: z.boolean().optional(),
@@ -67,5 +67,21 @@ export async function tasksRoutes(app: FastifyInstance) {
     const success = await taskDelete(campaignId, params.id);
     if (!success) throw notFound("Task not found");
     return { success: true };
+  });
+
+  // 5. COMPLETE FINANCIAL TASK
+  app.post("/:id/complete-financial", { preHandler: [app.requireAuth] }, async (req: any) => {
+      const params = z.object({ id: z.string().uuid() }).parse(req.params);
+      const body = z.object({
+          amount: z.number().min(0),
+          concept: z.string().min(1)
+      }).parse(req.body);
+
+      const campaignId = req.user.campaignId;
+      return taskCompleteWithExpense(campaignId, params.id, {
+          amount: body.amount,
+          concept: body.concept,
+          userId: req.user.userId
+      });
   });
 }

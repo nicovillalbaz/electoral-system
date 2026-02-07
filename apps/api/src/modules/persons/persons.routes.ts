@@ -172,7 +172,7 @@ export async function personsRoutes(app: FastifyInstance) {
             .optional(),
 
           // Nuevos Campos de Pedidos y Finanzas
-          requests: z.array(z.string()).optional(),
+          requests: z.array(z.any()).optional(), // FIXED: Allow objects
           hasFinancialNeeds: z.boolean().optional(),
           financialNeedsFulfilled: z.boolean().optional(),
           financialAmount: z.number().optional()

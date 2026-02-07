@@ -4,7 +4,10 @@ import api from '../../../lib/api';
 import { MapPin, Plus, Activity, Users, CheckCircle, Car } from 'lucide-react';
 import { useDebounce } from 'use-debounce';
 
+import { useRouter } from 'next/navigation';
+
 export default function StationsPage() {
+  const router = useRouter();
   const [stations, setStations] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [newStation, setNewStation] = useState({ name: '' });
@@ -72,7 +75,7 @@ export default function StationsPage() {
               return (
                 <div 
                     key={s.id} 
-                    onClick={() => openStationDetails(s)}
+                    onClick={() => router.push(`/dashboard/stations/${s.id}`)}
                     className="group bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 transition-all cursor-pointer relative overflow-hidden"
                 >
                     <div className="flex justify-between items-start mb-4">

@@ -1,7 +1,15 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireRole } from "../../common/middleware/role";
-import { markVoted, listMissingByTerritory, transportRequestCreate, transportRequestsList, transportRequestUpdate, getDayDGrid, checkCollision, updateDayDStatus, registerIncentive } from "./voting.repo";
+import { 
+    markVoted, 
+    listMissingByTerritory, 
+    createTransportTask, 
+    createFinancialTask,
+    getDayDGrid, 
+    checkCollision, 
+    updateDayDStatus 
+} from "./voting.repo";
 import { logEvent } from "../events/events.repo";
 
 export async function votingRoutes(app: FastifyInstance) {
@@ -51,41 +59,31 @@ export async function votingRoutes(app: FastifyInstance) {
     });
   });
 
-  // --- TRANSPORTE ---
-  app.post("/transport/request", { preHandler: [app.requireAuth] }, async (req: any) => {
+  // --- DAY D ACTIONS (Task Triggers) ---
+
+  // 1. Trigger Transporte
+  app.post("/transport", { preHandler: [app.requireAuth] }, async (req: any) => {
     const body = z.object({
       personId: z.string().uuid(),
-      pickupAddress: z.string().optional(),
-      pickupLat: z.number().optional(),
-      pickupLng: z.number().optional(),
+      pickupAddress: z.string(),
       destinationAddress: z.string().optional(),
       notes: z.string().optional(),
     }).parse(req.body);
 
-    return transportRequestCreate(req.user.campaignId, body);
+    return createTransportTask(req.user.campaignId, req.user.userId, body);
   });
 
-  app.get("/transport/requests", { preHandler: [app.requireAuth] }, async (req: any) => {
-    const q = z.object({
-      status: z.enum(['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'ALL']).optional(),
-    }).parse(req.query);
+  // 2. Trigger Logística/Viático
+  app.post("/financial", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR"])] }, async (req: any) => {
+    const body = z.object({
+        personId: z.string().uuid(),
+        notes: z.string().optional()
+    }).parse(req.body);
 
-    return transportRequestsList(req.user.campaignId, q.status);
+    return createFinancialTask(req.user.campaignId, req.user.userId, body);
   });
 
-  app.patch("/transport/requests/:id", { preHandler: [app.requireAuth] }, async (req: any) => {
-     const params = z.object({ id: z.string().uuid() }).parse(req.params);
-     const body = z.object({
-       status: z.enum(['PENDING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
-       driverUserId: z.string().uuid().optional(),
-     }).parse(req.body);
-
-     return transportRequestUpdate(req.user.campaignId, params.id, body);
-  });
-
-   // --- DAY D CONTROL (MERGED) ---
-   
-   // 1. THE GRID
+   // 3. The Grid
    app.get("/grid", { preHandler: [app.requireAuth] }, async (req: any) => {
     const q = z.object({
         query: z.string().optional(),
@@ -100,39 +98,19 @@ export async function votingRoutes(app: FastifyInstance) {
     });
    });
 
-   // 2. CHECK COLLISION
-   app.get("/check-collision/:citizenId", { preHandler: [app.requireAuth] }, async (req: any) => {
-      const { citizenId } = z.object({ citizenId: z.string().uuid() }).parse(req.params);
-      return checkCollision(citizenId);
-   });
-
-   // 3. UPDATE STATUS
+   // 4. Update Status (Manual/Pass PC)
    app.post("/status", { preHandler: [app.requireAuth] }, async (req: any) => {
       const body = z.object({
           personId: z.string().uuid(),
           status: z.enum(['PENDING', 'SEARCHING', 'ON_TRANSIT', 'ARRIVED', 'CHECKED_IN', 'VOTED']),
       }).parse(req.body);
 
-      // Simple collision check before transit logic could go here similar to previous implementation
-      // Keeping it lean for consolidation
-
       return updateDayDStatus(req.user.campaignId, req.user.userId, body.personId, body.status);
    });
 
-   // 4. INCENTIVE
-   app.post("/incentive", { 
-       preHandler: [
-           app.requireAuth, 
-           requireRole(["ADMIN", "COORDINATOR"]) 
-       ] 
-   }, async (req: any) => {
-       const body = z.object({
-           personId: z.string().uuid(),
-           type: z.enum(['viatico', 'combustible', 'logistica', 'snack']),
-           amount: z.number().min(0),
-           notes: z.string().optional()
-       }).parse(req.body);
-
-       return registerIncentive(req.user.campaignId, req.user.userId, body);
+   // 5. Check Collision
+   app.get("/check-collision/:citizenId", { preHandler: [app.requireAuth] }, async (req: any) => {
+      const { citizenId } = z.object({ citizenId: z.string().uuid() }).parse(req.params);
+      return checkCollision(citizenId);
    });
 }

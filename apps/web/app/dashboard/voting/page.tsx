@@ -7,6 +7,8 @@ import { addToQueue } from "../../../lib/offline-queue";
 
 import { Search, Siren, Truck, Zap } from "lucide-react";
 import VoterRow from "./components/VoterRow";
+import CrisisModal from "../components/CrisisModal";
+import VoterControlPanel from "./components/VoterControlPanel"; // <--- Correct Placement
 import { useDebounce } from "use-debounce";
 
 export default function DayDPage() {
@@ -15,10 +17,15 @@ export default function DayDPage() {
   const [voters, setVoters] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [collisionAlert, setCollisionAlert] = useState<string | null>(null);
+  
+  // Stations for Inline Edit
+  const [stations, setStations] = useState<any[]>([]);
+  useEffect(() => {
+      safeApi.get('/stations').then(res => setStations(res.data)).catch(() => {});
+  }, []);
 
-  // Incentive Modal State
-  const [showIncentive, setShowIncentive] = useState(false);
-  const [selectedPerson, setSelectedPerson] = useState<{id: string, name: string} | null>(null);
+  // New State for Selection
+  const [selectedVoter, setSelectedVoter] = useState<any | null>(null);
 
   const loadGrid = useCallback(async () => {
     setLoading(true);
@@ -38,18 +45,31 @@ export default function DayDPage() {
     loadGrid();
   }, [loadGrid]);
 
+  // When query changes, clear selection? Maybe.
+  useEffect(() => {
+     if (query.length < 3) {
+         setVoters([]);
+         setSelectedVoter(null);
+     }
+  }, [query]);
+
   // Anti-Fraud
   useEffect(() => {
     if (debouncedQuery.length >= 6) { 
         const found = voters.find(v => v.document_id === debouncedQuery || v.document_id.includes(debouncedQuery));
         
-        if (found && found.status_day_d === 'VOTED') {
-            setCollisionAlert(`¡ALERTA! La cédula ${found.document_id} YA VOTÓ.`);
-        } else if (found && found.status_day_d === 'ON_TRANSIT') {
-            setCollisionAlert(`Precaución: ${found.document_id} ya está EN TRÁNSITO.`);
-        } else {
-            setCollisionAlert(null);
-             checkCrossCollision(debouncedQuery);
+        if (found) {
+            // Auto Select if exact match?
+            // if (found.document_id === debouncedQuery) setSelectedVoter(found); 
+            
+            if (found.status_day_d === 'VOTED') {
+                setCollisionAlert(`¡ALERTA! La cédula ${found.document_id} YA VOTÓ.`);
+            } else if (found.status_day_d === 'ON_TRANSIT') {
+                setCollisionAlert(`Precaución: ${found.document_id} ya está EN TRÁNSITO.`);
+            } else {
+                setCollisionAlert(null);
+                checkCrossCollision(debouncedQuery);
+            }
         }
     } else {
         setCollisionAlert(null);
@@ -68,116 +88,112 @@ export default function DayDPage() {
       }
   }
 
-  const handleStatusChange = async (id: string, newStatus: string) => {
-    // 1. Optimistic Update (Instant feedback)
-    setVoters(prev => prev.map(v => v.id === id ? { ...v, status_day_d: newStatus } : v));
-    
-    // 2. Offline Queue (Guaranteed Delivery)
-    addToQueue("/voting/status", 'POST', { personId: id, status: newStatus });
+  const handleSelectVoter = (v: any) => {
+      setSelectedVoter(v);
   };
 
-  const openIncentive = (id: string, name: string) => {
-      setSelectedPerson({ id, name });
-      setShowIncentive(true);
+  const handleBackToSearch = () => {
+      setSelectedVoter(null);
   };
 
-  const submitIncentive = async (type: string) => {
-      if (!selectedPerson) return;
-      
-      // Incentives are sensitive, maybe not fully offline-optimistic, 
-      // but for consistency we can queue it or require online. 
-      // Requirement says "Access Control", usually strict. 
-      // But user asked for "Persistence" generally. Let's try online first, fallback to queue?
-      // For security, queueing incentives might be risky if token expires. 
-      // But allow it for usability.
-      
-      addToQueue("/voting/incentive", 'POST', { 
-          personId: selectedPerson.id, 
-          type, 
-          amount: 50000,
-          notes: "Entregado en Sala de Guerra (Offline Sync)" 
-      });
-      
-      setShowIncentive(false);
-      // Optimistic visual update (optional, complex to add marker locally without re-fetch)
-      // loadGrid(); // Won't work offline immediately.
-      // We manually toggle the dot
-      setVoters(prev => prev.map(v => v.id === selectedPerson.id ? { ...v, has_incentive: true } : v));
-  }
+  const [showCrisis, setShowCrisis] = useState(false);
 
+    return (
+        <div className="h-screen flex flex-col bg-zinc-950 overflow-hidden">
+            {/* Header "War Room" */}
+            <div className={`p-4 border-b border-white/5 transition-colors ${collisionAlert ? 'bg-red-900/50' : 'bg-zinc-900/50'} text-white shrink-0`}>
+                <div className="flex justify-between items-center mb-4">
+                    <h1 className="text-xl font-black tracking-tighter flex items-center gap-2">
+                        <Siren className={collisionAlert ? 'animate-bounce' : 'text-emerald-500'} /> 
+                        CONTROL DÍA D
+                    </h1>
+                     <div className="flex items-center gap-4">
+                         <button 
+                            onClick={() => setShowCrisis(true)}
+                            className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-bold text-xs uppercase animate-pulse flex items-center gap-2"
+                         >
+                             <Siren size={16}/> Reportar Incidente
+                         </button>
+                        <div className="text-xs font-mono opacity-70">
+                            {voters.length} registros
+                        </div>
+                     </div>
+                </div>
 
-  return (
-    <div className="h-screen flex flex-col bg-slate-50">
-      {/* Header "War Room" */}
-      <div className={`p-4 border-b transition-colors ${collisionAlert ? 'bg-red-600' : 'bg-slate-900'} text-white`}>
-        <div className="flex justify-between items-center mb-4">
-            <h1 className="text-xl font-black tracking-tighter flex items-center gap-2">
-                <Siren className={collisionAlert ? 'animate-bounce' : 'text-red-500'} /> 
-                CONTROL DÍA D
-            </h1>
-            <div className="text-xs font-mono opacity-70">
-                {voters.length} registros visibles
+                <div className="relative">
+                    <Search className="absolute left-3 top-3 text-zinc-500 w-5 h-5" />
+                    <input 
+                        autoFocus
+                        placeholder="ESCANEAR CÉDULA O BUSCAR APELLIDO..."
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 pl-10 pr-4 text-lg font-bold text-white placeholder:text-zinc-600 focus:ring-2 focus:ring-emerald-500 outline-none"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                    />
+                </div>
+                
+                {collisionAlert && (
+                    <div className="mt-2 bg-red-950/50 border border-red-500/30 p-2 rounded text-center font-bold animate-pulse text-red-200">
+                        {collisionAlert}
+                    </div>
+                )}
             </div>
+
+            {/* Main Content Split */}
+            <div className="flex-1 flex overflow-hidden">
+                {/* Left: Voter Operations */}
+                <div className="flex-1 overflow-y-auto bg-zinc-950 p-4">
+                     
+                     {selectedVoter ? (
+                         <div className="max-w-3xl mx-auto h-full">
+                             <button onClick={handleBackToSearch} className="mb-2 text-sm text-zinc-500 hover:text-white flex items-center gap-1">
+                                 &larr; VOLVER A RESULTADOS
+                             </button>
+                             <VoterControlPanel 
+                                voter={selectedVoter} 
+                                onClose={handleBackToSearch} 
+                                onUpdate={(updated) => { 
+                                    if(updated) setSelectedVoter(updated);
+                                    loadGrid(); 
+                                }}
+                            />
+                         </div>
+                     ) : (
+                        <div className="max-w-4xl mx-auto space-y-4">
+                            {voters.length > 0 && (
+                                <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-2">Resultados ({voters.length})</h3>
+                            )}
+                            
+                            {voters.map(v => (
+                                <div key={v.id}> 
+                                    <VoterRow 
+                                        voter={v} 
+                                        onSelect={() => handleSelectVoter(v)}
+                                        onUpdate={(updated) => {
+                                            if(updated) {
+                                                setVoters(prev => prev.map(p => p.id === updated.id ? {...p, ...updated} : p));
+                                            }
+                                        }}
+                                        stations={stations}
+                                    />
+                                </div>
+                            ))}
+
+                            {voters.length === 0 && !loading && (
+                                <div className="flex flex-col items-center justify-center p-20 text-zinc-800 opacity-50">
+                                    <Search size={64} className="mb-4 text-zinc-900"/>
+                                    <p className="text-xl font-black">INGRESA CEDULA O APELLIDO</p>
+                                    <p className="text-sm">Para acceder al panel de control del elector</p>
+                                </div>
+                            )}
+                        </div>
+                     )}
+                </div>
+
+
+            </div>
+
+            {/* Crisis Modal */}
+            {showCrisis && <CrisisModal onClose={() => setShowCrisis(false)} />}
         </div>
-
-        <div className="relative">
-            <Search className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
-            <input 
-                autoFocus
-                placeholder="ESCANEAR CÉDULA O BUSCAR APELLIDO..."
-                className="w-full bg-slate-800 border-none rounded-xl py-3 pl-10 pr-4 text-lg font-bold text-white placeholder:text-slate-500 focus:ring-2 focus:ring-red-500"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-            />
-        </div>
-        
-        {collisionAlert && (
-            <div className="mt-2 bg-white/10 p-2 rounded text-center font-bold animate-pulse text-yellow-300">
-                {collisionAlert}
-            </div>
-        )}
-      </div>
-
-      {/* The Grid */}
-      <div className="flex-1 overflow-y-auto">
-        {voters.map(v => (
-            <VoterRow 
-                key={v.id} 
-                voter={v} 
-                onStatusChange={handleStatusChange} 
-                onIncentiveClick={openIncentive} 
-            />
-        ))}
-        {voters.length === 0 && !loading && (
-            <div className="p-10 text-center text-gray-400">
-                Esperando búsqueda...
-            </div>
-        )}
-      </div>
-
-      {/* Incentive Modal (Quick Action) */}
-      {showIncentive && selectedPerson && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
-                  <h3 className="text-lg font-bold mb-4">Logística: {selectedPerson.name}</h3>
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                      <button onClick={() => submitIncentive('viatico')} className="p-4 bg-blue-50 text-blue-700 rounded-xl font-bold hover:bg-blue-100">
-                          Viático
-                      </button>
-                      <button onClick={() => submitIncentive('combustible')} className="p-4 bg-orange-50 text-orange-700 rounded-xl font-bold hover:bg-orange-100">
-                          Combustible
-                      </button>
-                      <button onClick={() => submitIncentive('logistica')} className="p-4 bg-purple-50 text-purple-700 rounded-xl font-bold hover:bg-purple-100">
-                          Logística
-                      </button>
-                      <button onClick={() => submitIncentive('snack')} className="p-4 bg-green-50 text-green-700 rounded-xl font-bold hover:bg-green-100">
-                          Refrigerio
-                      </button>
-                  </div>
-                  <button onClick={() => setShowIncentive(false)} className="w-full py-3 text-gray-500 font-medium">Cancelar</button>
-              </div>
-          </div>
-      )}
-    </div>
-  );
+    );
 }

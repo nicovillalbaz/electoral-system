@@ -1,6 +1,7 @@
 "use client";
 
 import Sidebar from "./components/sidebar";
+import OfflineIndicator from "./components/OfflineIndicator";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
@@ -35,6 +36,7 @@ export default function DashboardLayout({
   return (
     // CAMBIO DE DISEÑO: Usamos las variables semánticas (background/foreground)
     <div className="min-h-screen bg-background text-foreground flex font-sans antialiased selection:bg-red-500/30">
+      <OfflineIndicator />
       <Sidebar />
       
       {/* AJUSTES DE DISEÑO: Responsive Margin */}

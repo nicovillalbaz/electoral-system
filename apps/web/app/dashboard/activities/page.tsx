@@ -30,6 +30,7 @@ import api from "../../../lib/api";
 import clsx from "clsx";
 import { useDebounce } from "use-debounce";
 import TaskModal from "./components/TaskModal";
+import FinancialClosingModal from "./components/FinancialClosingModal";
 
 // --- TYPES ---
 interface Task {
@@ -37,7 +38,7 @@ interface Task {
   title: string;
   description: string;
   priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
-  task_type: "VISIT" | "CALL" | "EVENT" | "LOGISTICS";
+  task_type: "VISIT" | "CALL" | "EVENT" | "LOGISTICS" | "FINANCIAL";
   due_date: string;
   completed_at: string | null;
   location_text: string | null;
@@ -89,7 +90,17 @@ export default function ActivitiesPage() {
     }
   };
 
-  const toggleTaskCompletion = async (taskId: string, currentStatus: boolean) => {
+  const [financialTaskToClose, setFinancialTaskToClose] = useState<Task | null>(null);
+
+  const toggleTaskCompletion = async (taskId: string, currentStatus: boolean, taskType: string) => {
+    // Intercept Financial Tasks
+    if (taskType === 'FINANCIAL' && !currentStatus) {
+        // If it's NOT completed and we want to complete it -> Open Modal
+        const t = tasks.find(x => x.id === taskId);
+        if (t) setFinancialTaskToClose(t);
+        return;
+    }
+
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed_at: currentStatus ? null : new Date().toISOString() } : t));
     
@@ -104,7 +115,7 @@ export default function ActivitiesPage() {
   // --- RENDER HELPERS ---
   const getPriorityColor = (p: string) => {
     switch(p) {
-        case "URGENT": return "text-red-500 bg-red-950/30 border-red-900";
+        case "URGENT": return "text-red-500 bg-red-950/30 border-red-900 animate-pulse";
         case "HIGH": return "text-orange-500 bg-orange-950/30 border-orange-900";
         case "MEDIUM": return "text-yellow-500 bg-yellow-950/30 border-yellow-900";
         case "LOW": return "text-blue-500 bg-blue-950/30 border-blue-900";
@@ -118,6 +129,7 @@ export default function ActivitiesPage() {
           case "CALL": return "📞";
           case "EVENT": return "🎉";
           case "LOGISTICS": return "🚚";
+          case "FINANCIAL": return "💰";
           default: return "📌";
       }
   };
@@ -188,11 +200,19 @@ export default function ActivitiesPage() {
       setShowModal(true);
   };
 
-  const handleDelete = async (taskId: string) => {
+  const handleDelete = async (task: Task) => {
+      if (task.task_type === 'FINANCIAL') {
+          // Block delete, suggest close
+          if (confirm("Las tareas financieras (viáticos/logística) no se pueden eliminar.\n¿Desea CERRAR la tarea registrando el gasto?")) {
+             setFinancialTaskToClose(task);
+          }
+          return;
+      }
+
       if(!confirm("¿Estás seguro de eliminar esta actividad?")) return;
       try {
-          await api.delete(`/tasks/${taskId}`);
-          setTasks(prev => prev.filter(t => t.id !== taskId));
+          await api.delete(`/tasks/${task.id}`);
+          setTasks(prev => prev.filter(t => t.id !== task.id));
       } catch(e) {
           alert("Error al eliminar");
       }
@@ -213,6 +233,15 @@ export default function ActivitiesPage() {
       </div>
 
       <TaskModal isOpen={showModal} onClose={() => setShowModal(false)} onSuccess={fetchTasks} taskToEdit={taskToEdit} />
+      
+      {financialTaskToClose && (
+          <FinancialClosingModal 
+            isOpen={!!financialTaskToClose} 
+            onClose={() => setFinancialTaskToClose(null)} 
+            onSuccess={fetchTasks} 
+            task={financialTaskToClose} 
+          />
+      )}
 
       {/* CONTROLS */}
       <div className="flex flex-col md:flex-row gap-4 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
@@ -237,6 +266,7 @@ export default function ActivitiesPage() {
                 <option value="CALL">📞 Llamada</option>
                 <option value="EVENT">🎉 Evento</option>
                 <option value="LOGISTICS">🚚 Logística</option>
+                <option value="FINANCIAL">💰 Viático/Logística</option>
             </select>
 
             <div className="bg-black border border-zinc-800 rounded-lg p-1 flex">
@@ -279,13 +309,13 @@ export default function ActivitiesPage() {
                     {tasks.map(task => (
                         <div key={task.id} className="group bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex items-center gap-4 transition-all hover:border-zinc-700 hover:shadow-lg">
                             <button 
-                                onClick={() => toggleTaskCompletion(task.id, !!task.completed_at)}
+                                onClick={() => toggleTaskCompletion(task.id, !!task.completed_at, task.task_type)}
                                 className={clsx("w-6 h-6 rounded-full border flex items-center justify-center transition-colors", task.completed_at ? "bg-emerald-500 border-emerald-500 text-white" : "border-zinc-600 text-transparent hover:border-emerald-500 group-hover:bg-zinc-800")}
                             >
                                 <CheckCircle2 size={14} />
                             </button>
                             
-                            <div className="flex-1 min-w-0" onClick={() => openEdit(task)} className="cursor-pointer">
+                            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEdit(task)}>
                                 <h3 className={clsx("font-bold text-base truncate", task.completed_at ? "text-zinc-500 line-through" : "text-white")}>{task.title}</h3>
                                 <div className="flex items-center gap-3 text-xs text-zinc-500 mt-1">
                                     <span className="flex items-center gap-1">{getTypeIcon(task.task_type)} {task.task_type}</span>
@@ -297,7 +327,7 @@ export default function ActivitiesPage() {
                             {/* ACTIONS */}
                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button onClick={() => openEdit(task)} className="text-zinc-500 hover:text-white p-2 hover:bg-zinc-800 rounded-full text-xs font-bold">EDITAR</button>
-                                <button onClick={() => handleDelete(task.id)} className="text-red-500/50 hover:text-red-500 p-2 hover:bg-red-950/30 rounded-full text-xs font-bold">ELIMINAR</button>
+                                <button onClick={() => handleDelete(task)} className="text-red-500/50 hover:text-red-500 p-2 hover:bg-red-950/30 rounded-full text-xs font-bold">ELIMINAR</button>
                             </div>
 
                             <span className={clsx("text-[10px] font-black px-2 py-1 rounded border", getPriorityColor(task.priority))}>
@@ -315,3 +345,4 @@ export default function ActivitiesPage() {
     </div>
   );
 }
+

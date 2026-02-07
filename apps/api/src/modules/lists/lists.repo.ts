@@ -53,7 +53,7 @@ export async function ensureSystemLists(campaignId: string) {
 export async function listsGetAll(campaignId: string, search?: string) {
   await ensureSystemLists(campaignId);
 
-  let sql = `SELECT * FROM lists WHERE campaign_id = $1`;
+  let sql = `SELECT * FROM lists WHERE campaign_id = $1 AND deleted_at IS NULL`;
   const params: any[] = [campaignId];
 
   if (search) {
@@ -68,14 +68,15 @@ export async function listsGetAll(campaignId: string, search?: string) {
 
 export async function listGet(campaignId: string, id: string) {
   const res = await query(
-    `SELECT * FROM lists WHERE id = $1 AND campaign_id = $2`,
+    `SELECT * FROM lists WHERE id = $1 AND campaign_id = $2 AND deleted_at IS NULL`,
     [id, campaignId]
   );
   return res.rows[0];
 }
 
 export async function listDelete(campaignId: string, id: string) {
-  await query(`DELETE FROM lists WHERE id = $1 AND campaign_id = $2`, [id, campaignId]);
+  // Soft Delete
+  await query(`UPDATE lists SET deleted_at = NOW() WHERE id = $1 AND campaign_id = $2`, [id, campaignId]);
   return { success: true };
 }
 

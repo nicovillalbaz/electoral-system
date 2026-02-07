@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, CheckSquare, Clock, MapPin, Phone, User } from "lucide-react";
+import { Calendar, CheckSquare, Clock, MapPin, Phone, User, Trash2 } from "lucide-react";
 import { useState } from "react";
 import api from "../../../lib/api";
 
@@ -88,13 +88,52 @@ export default function TaskCard({ task, onUpdate }: { task: Task; onUpdate: () 
            <span>{task.assigned_user_name || 'Sin asignar'}</span>
         </div>
         
-        <button 
-           onClick={toggleComplete}
-           disabled={loading}
-           className={`p-1.5 rounded-md transition-colors ${task.completed_at ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400 hover:bg-green-50 hover:text-green-600'}`}
-        >
-          <CheckSquare className="w-4 h-4" />
-        </button>
+        <div className="flex gap-2">
+            {/* Delete / Archive Button */}
+            {!task.completed_at && (
+                <button
+                    disabled={loading}
+                    onClick={async (e) => {
+                        e.stopPropagation();
+                        
+                        // Lógica de protección para Tareas Financieras
+                        if (task.task_type === 'LOGISTICS') {
+                            const choice = confirm(
+                                "⚠️ ADVERTENCIA DE GASTO ⚠️\n\n" +
+                                "Estás intentando eliminar una tarea LOGÍSTICA/FINANCIERA.\n" +
+                                "Si la eliminas, desaparecerá del balance de gastos.\n\n" +
+                                "• Para registrar el gasto: Presiona CANCELAR y luego el botón ✅.\n" +
+                                "• Para borrar (error de carga): Presiona ACEPTAR."
+                            );
+                            if (!choice) return; // User cancelled to finalize it manually
+                        } else {
+                             if (!confirm('¿Seguro que deseas eliminar esta tarea?')) return;
+                        }
+
+                        // Proceed with Soft Delete
+                        setLoading(true);
+                        try {
+                             await api.delete(`/tasks/${task.id}`);
+                             onUpdate();
+                        } catch(e) { console.error(e); }
+                        setLoading(false);
+                    }}
+                    className="p-1.5 rounded-md text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                    title="Eliminar (Archivar)"
+                >
+                    <Trash2 className="w-4 h-4" />
+                </button>
+            )}
+
+            <button 
+               onClick={toggleComplete}
+               disabled={loading}
+               className={`p-1.5 rounded-md transition-colors ${task.completed_at ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400 hover:bg-green-50 hover:text-green-600'}`}
+               title={task.task_type === 'LOGISTICS' ? "Finalizar y Archivar" : "Marcar completado"}
+            >
+              <CheckSquare className="w-4 h-4" />
+            </button>
+        </div>
       </div>
     </div>
   );

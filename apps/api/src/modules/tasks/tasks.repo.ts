@@ -1,4 +1,4 @@
-import { query } from "../../db/query";
+import { query, pool } from "../../db/query";
 
 export async function tasksList(
   campaignId: string,
@@ -94,6 +94,7 @@ export async function tasksList(
     LEFT JOIN global_citizens g ON p.citizen_id = g.id
     LEFT JOIN lists l ON t.related_list_id = l.id
     WHERE ${conditions.join(" AND ")}
+    AND t.deleted_at IS NULL
     ORDER BY t.due_date ASC NULLS LAST, t.created_at DESC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `;
@@ -204,7 +205,48 @@ export async function taskUpdate(campaignId: string, taskId: string, data: any) 
 }
 
 export async function taskDelete(campaignId: string, taskId: string) {
-  const sql = `DELETE FROM tasks WHERE campaign_id = $1 AND id = $2 RETURNING id`;
+  // SOFT DELETE: Mark as deleted instead of removing
+  const sql = `UPDATE tasks SET deleted_at = NOW() WHERE campaign_id = $1 AND id = $2 RETURNING id`;
   const res = await query(sql, [campaignId, taskId]);
   return (res.rowCount ?? 0) > 0;
+}
+
+export async function taskCompleteWithExpense(
+  campaignId: string,
+  taskId: string,
+  data: { amount: number; concept: string; userId: string }
+) {
+  const client = await pool.connect(); // Need pool import if not present, checking imports
+  try {
+    await client.query("BEGIN");
+
+    // 1. Mark task as COMPLETED
+    const completeSql = `
+      UPDATE tasks 
+      SET completed_at = NOW(), updated_at = NOW()
+      WHERE id = $1 AND campaign_id = $2
+      RETURNING id
+    `;
+    const taskRes = await client.query(completeSql, [taskId, campaignId]);
+    
+    if (taskRes.rowCount === 0) {
+      throw new Error("Task not found or access denied");
+    }
+
+    // 2. Insert Expense
+    const expenseSql = `
+      INSERT INTO task_expenses (task_id, amount, concept, created_by, created_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      RETURNING id
+    `;
+    await client.query(expenseSql, [taskId, data.amount, data.concept, data.userId]);
+
+    await client.query("COMMIT");
+    return { success: true };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 }

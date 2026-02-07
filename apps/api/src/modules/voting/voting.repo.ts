@@ -1,4 +1,5 @@
 import { query, pool } from "../../db/query";
+import { taskCreate } from "../tasks/tasks.repo"; 
 
 export async function markVoted(input: {
   campaignId: string;
@@ -69,123 +70,131 @@ export async function listMissingByTerritory(input: {
   return res.rows;
 }
 
-// --- TRANSPORTE (UBER ELECTORAL) ---
+// --- NEW DAY D LOGIC USING TASKS ---
 
-export async function transportRequestCreate(campaignId: string, data: any) {
-  const sql = `
-    INSERT INTO transport_requests (
-      campaign_id,
-      person_id,
-      pickup_address,
-      pickup_lat,
-      pickup_lng,
-      destination_address,
-      status,
-      notes,
-      requested_at
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, NOW())
-    RETURNING *
-  `;
-  const res = await query(sql, [
-    campaignId,
-    data.personId,
-    data.pickupAddress,
-    data.pickupLat ?? null,
-    data.pickupLng ?? null,
-    data.destinationAddress ?? null,
-    data.notes ?? null
-  ]);
-  
-  // Also update person's needs_transport status
-  await query(
-    `UPDATE persons SET needs_transport = true, transport_status = 'PENDING' WHERE campaign_id = $1 AND id = $2`,
-    [campaignId, data.personId]
-  );
-  
-  return res.rows[0];
+// 1. Trigger Transporte: Crea Tarea URGENT de tipo LOGISTICS
+export async function createTransportTask(
+    campaignId: string, 
+    userId: string, 
+    data: { personId: string; pickupAddress: string; destinationAddress?: string; notes?: string }
+) {
+    // Primero obtenemos el nombre de la persona para el título
+    const pRes = await query(`
+        SELECT g.first_name, g.last_name 
+        FROM persons p 
+        JOIN global_citizens g ON p.citizen_id = g.id 
+        WHERE p.id = $1
+    `, [data.personId]);
+    
+    if (pRes.rows.length === 0) throw new Error("Person not found");
+    const p = pRes.rows[0];
+
+    const title = `Buscar a ${p.first_name} ${p.last_name} en ${data.pickupAddress}`;
+
+    // Update person status
+    await query(
+        `UPDATE persons SET needs_transport = true, transport_status = 'PENDING' WHERE campaign_id = $1 AND id = $2`,
+        [campaignId, data.personId]
+    );
+
+    return taskCreate(campaignId, userId, {
+        title: title,
+        description: data.notes ?? `Destino: ${data.destinationAddress || 'PC Central'}`,
+        priority: 'URGENT',
+        taskType: 'LOGISTICS',
+        relatedPersonId: data.personId,
+        locationText: data.pickupAddress
+    });
 }
 
-export async function transportRequestsList(campaignId: string, status?: string) {
-  const params: any[] = [campaignId];
-  let where = `WHERE t.campaign_id = $1`;
-  
-  if (status) {
-    if (status !== 'ALL') {
-      where += ` AND t.status = $2`;
-      params.push(status);
+// 2. Trigger Logística/Viático: Crea Tarea URGENT de tipo FINANCIAL
+export async function createFinancialTask(
+    campaignId: string,
+    userId: string,
+    data: { personId: string; notes?: string }
+) {
+     const pRes = await query(`
+        SELECT g.first_name, g.last_name 
+        FROM persons p 
+        JOIN global_citizens g ON p.citizen_id = g.id 
+        WHERE p.id = $1
+    `, [data.personId]);
+    
+    if (pRes.rows.length === 0) throw new Error("Person not found");
+    const p = pRes.rows[0];
+
+    const title = `Entrega de Viático/Logística a ${p.first_name} ${p.last_name}`;
+
+    // Update person status if needed (e.g. has_financial_needs = true)
+    await query(
+        `UPDATE persons SET has_financial_needs = true WHERE campaign_id = $1 AND id = $2`,
+        [campaignId, data.personId]
+    );
+
+    return taskCreate(campaignId, userId, {
+        title: title,
+        description: data.notes,
+        priority: 'URGENT',
+        taskType: 'FINANCIAL',
+        relatedPersonId: data.personId
+    });
+}
+
+// 3. The Grid (Simplified)
+export async function getDayDGrid(campaignId: string, params: {
+    q?: string,
+    limit?: number,
+    offset?: number
+}) {
+    const { q = "", limit = 50, offset = 0 } = params;
+    const queryParams: any[] = [campaignId];
+    let paramIndex = 2;
+    
+    let where = `p.campaign_id = $1`;
+    
+    if (q) {
+        where += ` AND (g.document_id ILIKE $${paramIndex} OR g.first_name ILIKE $${paramIndex} OR g.last_name ILIKE $${paramIndex})`;
+        queryParams.push(`%${q}%`);
+        paramIndex++;
     }
-  } else {
-    // Default to active requests
-    where += ` AND t.status IN ('PENDING', 'ASSIGNED', 'IN_PROGRESS')`;
-  }
 
-  const sql = `
-    SELECT 
-      t.*,
-      p_global.first_name,
-      p_global.last_name,
-      p_global.phone_number,
-      u.full_name as driver_name
-    FROM transport_requests t
-    JOIN persons p ON t.person_id = p.id
-    JOIN global_citizens p_global ON p.citizen_id = p_global.id
-    LEFT JOIN users u ON t.driver_user_id = u.id
-    ${where}
-    ORDER BY t.requested_at ASC
-  `;
-  
-  const res = await query(sql, params);
-  return res.rows;
+    const sql = `
+      SELECT
+        p.id,
+        p.citizen_id,
+        p.has_voted,
+        p.status_day_d,
+        p.needs_transport,
+        p.transport_status,
+        p.has_financial_needs,
+        p.financial_needs_fulfilled,
+        p.financial_amount,
+        p.requests,
+        p.notes,
+        p.current_vote_intent,
+        p.campaign_status,
+        p.assigned_station_id,
+        p.station_checkin_at,
+        g.document_id,
+        g.first_name,
+        g.last_name,
+        g.voting_table_number
+      FROM persons p
+      JOIN global_citizens g ON p.citizen_id = g.id
+      WHERE ${where}
+      ORDER BY 
+        p.has_voted ASC, -- Primero los que no votaron
+        g.last_name ASC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+
+    queryParams.push(limit, offset);
+
+    const res = await query(sql, queryParams);
+    return res.rows;
 }
 
-export async function transportRequestUpdate(campaignId: string, requestId: string, data: any) {
-  const updates: string[] = [];
-  const params: any[] = [campaignId, requestId];
-  let paramIndex = 3;
-
-  if (data.status) {
-    updates.push(`status = $${paramIndex++}`);
-    params.push(data.status);
-  }
-  
-  if (data.driverUserId !== undefined) {
-    updates.push(`driver_user_id = $${paramIndex++}`);
-    params.push(data.driverUserId);
-  }
-
-  if (data.status === 'COMPLETED') {
-    updates.push(`completed_at = NOW()`);
-  }
-
-  if (updates.length === 0) return { success: true };
-
-  updates.push(`updated_at = NOW()`); // Assuming table has updated_at or we skip it if not
-
-  const sql = `
-    UPDATE transport_requests
-    SET ${updates.join(", ")}
-    WHERE campaign_id = $1 AND id = $2
-    RETURNING *
-  `;
-  
-  const res = await query(sql, params);
-  const updatedRequest = res.rows[0];
-  
-  if (updatedRequest && data.status) {
-     // Update person status too
-     await query(
-       `UPDATE persons SET transport_status = $1 WHERE campaign_id = $2 AND id = $3`,
-       [data.status, campaignId, updatedRequest.person_id]
-     );
-  }
-  
-  return updatedRequest;
-}
-
-// --- DAY D CONTROL (MERGED) ---
-
-// 1. Detección de Colisiones GLOBAL (Cross-PC)
+// 4. Detección de Colisiones GLOBAL (Cross-PC)
 export async function checkCollision(citizenId: string): Promise<{ active: boolean; details?: any }> {
   // Buscamos si la persona tiene actividad RECIENTE (últimas 2 horas) 
   // en OTRO puesto de comando diferente al actual se chequeará en el service
@@ -211,53 +220,7 @@ export async function checkCollision(citizenId: string): Promise<{ active: boole
   return { active: false };
 }
 
-// 2. The Grid - High Density Query
-export async function getDayDGrid(campaignId: string, params: {
-    q?: string,
-    limit?: number,
-    offset?: number
-}) {
-    const { q = "", limit = 50, offset = 0 } = params;
-    const queryParams: any[] = [campaignId];
-    let paramIndex = 2;
-    
-    // Optimizada para velocidad
-    let where = `p.campaign_id = $1`;
-    
-    if (q) {
-        where += ` AND (g.document_id ILIKE $${paramIndex} OR g.last_name ILIKE $${paramIndex})`;
-        queryParams.push(`%${q}%`);
-        paramIndex++;
-    }
-
-    const sql = `
-      SELECT 
-        p.id,
-        p.citizen_id,
-        g.document_id,
-        g.first_name,
-        g.last_name,
-        g.voting_table_number,
-        p.status_day_d,
-        p.logistics_flag,
-        -- Traemos el último incentivo entregado si existe (solo indicador booleano para la grilla general para velocidad)
-        EXISTS(SELECT 1 FROM incentives_log il WHERE il.person_id = p.id) as has_incentive
-      FROM persons p
-      JOIN global_citizens g ON p.citizen_id = g.id
-      WHERE ${where}
-      ORDER BY 
-        CASE WHEN p.status_day_d = 'PENDING' THEN 0 ELSE 1 END, -- Prioridad a los pendientes
-        g.last_name ASC
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-    `;
-
-    queryParams.push(limit, offset);
-
-    const res = await query(sql, queryParams);
-    return res.rows;
-}
-
-// 3. Update Status (Optimistic)
+// 5. Update Status (Optimistic)
 export async function updateDayDStatus(
     campaignId: string, 
     userId: string, 
@@ -296,26 +259,4 @@ export async function updateDayDStatus(
     } finally {
         client.release();
     }
-}
-
-// 4. Registrar Incentivo (La Celda Discreta)
-export async function registerIncentive(
-    campaignId: string,
-    userId: string,
-    data: { personId: string, type: string, amount: number, notes?: string }
-) {
-    const sql = `
-        INSERT INTO incentives_log (campaign_id, person_id, incentive_type, amount, delivered_by, notes)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, created_at
-    `;
-    const res = await query(sql, [
-        campaignId, 
-        data.personId, 
-        data.type, 
-        data.amount, 
-        userId, 
-        data.notes || null
-    ]);
-    return res.rows[0];
 }

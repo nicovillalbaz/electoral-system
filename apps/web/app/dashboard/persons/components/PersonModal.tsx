@@ -61,7 +61,8 @@ export default function PersonModal({
     requests: [] as string[],
     hasFinancialNeeds: false,
     financialNeedsFulfilled: false,
-    financialAmount: 0
+    financialAmount: 0,
+    partyAffiliation: "ANR" // <--- Nuevo Campo
   });
 
   // Load Reference Data
@@ -88,7 +89,8 @@ export default function PersonModal({
                 requests: personToEdit.requests || [],
                 hasFinancialNeeds: personToEdit.has_financial_needs || false,
                 financialNeedsFulfilled: personToEdit.financial_needs_fulfilled || false,
-                financialAmount: personToEdit.financial_amount ? Number(personToEdit.financial_amount) : 0
+                financialAmount: personToEdit.financial_amount ? Number(personToEdit.financial_amount) : 0,
+                partyAffiliation: personToEdit.party_affiliation || "ANR" // <--- Load
             });
             fetchTags(personToEdit.id);
             fetchHistory(personToEdit.id);
@@ -99,7 +101,8 @@ export default function PersonModal({
                 phoneNumber: "", whatsappNumber: "", address: "", exactAddress: "",
                 assignedStationId: "", currentVoteIntent: "UNDECIDED", campaignStatus: "NOT_VISITED",
                 notes: "", needsTransport: false, transportStatus: "PENDING",
-                requests: [], hasFinancialNeeds: false, financialNeedsFulfilled: false, financialAmount: 0
+                requests: [], hasFinancialNeeds: false, financialNeedsFulfilled: false, financialAmount: 0,
+                partyAffiliation: "ANR" // <--- Reset
             });
             setAssignedTags([]);
             setHistory([]);
@@ -161,12 +164,65 @@ export default function PersonModal({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (isEditing) await api.patch(`/persons/${personToEdit.id}`, formData);
-      else await api.post("/persons", formData);
+      if (isEditing) {
+        // Minimalist Payload Logic
+        const payload: any = {};
+
+        // Helper for camelCase vs snake_case comparison
+        const check = (formKey: keyof typeof formData, originalKey: string, isNumber = false) => {
+             const formVal = formData[formKey];
+             const originalVal = personToEdit[originalKey];
+             
+             // Normalize for comparison
+             const fV = isNumber ? Number(formVal) : (formVal ?? "");
+             const oV = isNumber ? Number(originalVal) : (originalVal ?? "");
+
+             if (fV !== oV) {
+                 payload[formKey] = formVal;
+             }
+        };
+
+        // Fields to check
+        check('firstName', 'first_name');
+        check('lastName', 'last_name');
+        check('phoneNumber', 'phone_number');
+        check('whatsappNumber', 'whatsapp_number');
+        // check('address', 'address'); // Address is special logic? No, just string
+        if (formData.address !== (personToEdit.address || "")) payload.address = formData.address;
+        
+        check('exactAddress', 'exact_address');
+        check('assignedStationId', 'assigned_station_id');
+        check('currentVoteIntent', 'current_vote_intent');
+        check('campaignStatus', 'campaign_status');
+        check('notes', 'notes');
+        
+        if (formData.needsTransport !== !!personToEdit.needs_transport) payload.needsTransport = formData.needsTransport;
+        check('transportStatus', 'transport_status');
+        
+        if (formData.hasFinancialNeeds !== !!personToEdit.has_financial_needs) payload.hasFinancialNeeds = formData.hasFinancialNeeds;
+        if (formData.financialNeedsFulfilled !== !!personToEdit.financial_needs_fulfilled) payload.financialNeedsFulfilled = formData.financialNeedsFulfilled;
+        check('financialAmount', 'financial_amount', true);
+        check('partyAffiliation', 'party_affiliation');
+
+        // Requests Array Logic (Compare as sets/JSON)
+        const formReqs = JSON.stringify([...formData.requests].sort());
+        const origReqs = JSON.stringify([...(personToEdit.requests || [])].sort());
+        if (formReqs !== origReqs) {
+            payload.requests = formData.requests;
+        }
+
+        if (Object.keys(payload).length > 0) {
+             await api.patch(`/persons/${personToEdit.id}`, payload);
+        }
+      } else {
+        // Create Mode - Send all
+        await api.post("/persons", formData);
+      }
       
       onSuccess();
       onClose();
     } catch (error) {
+      console.error(error); // Log error for debugging
       alert("Error al guardar.");
     }
   };
@@ -199,8 +255,10 @@ export default function PersonModal({
              <form id="person-form" onSubmit={handleSave} className="space-y-6">
                 
                 {/* NEW PERSON FIELDS */}
-                {!isEditing && (
-                    <div className="grid grid-cols-3 gap-4">
+                {/* NEW PERSON FIELDS (Or Readonly if Editing) */}
+                <div className="grid grid-cols-3 gap-4">
+                    {!isEditing ? (
+                        <>
                         <div>
                             <label className="block text-xs font-bold text-zinc-500 mb-1">CÉDULA DE IDENTIDAD</label>
                             <input className="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-white outline-none focus:border-blue-500" value={formData.documentId} onChange={e => setFormData({...formData, documentId: e.target.value})} required />
@@ -213,8 +271,32 @@ export default function PersonModal({
                             <label className="block text-xs font-bold text-zinc-500 mb-1">APELLIDOS</label>
                             <input className="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-white outline-none focus:border-blue-500" value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} required />
                         </div>
-                    </div>
-                )}
+                        </>
+                    ) : (
+                         // If editing, show affiliation editor
+                        <div className="col-span-3 grid grid-cols-2 gap-4 bg-zinc-900/30 p-3 rounded border border-zinc-800 border-dashed">
+                             <div>
+                                <label className="block text-[10px] font-bold text-zinc-500 mb-1">PERSONA (Solo Lectura)</label>
+                                <div className="text-sm font-bold text-zinc-300">{personToEdit.first_name} {personToEdit.last_name}</div>
+                                <div className="text-xs text-zinc-500">CI: {personToEdit.document_id}</div>
+                             </div>
+                             <div>
+                                <label className="block text-[10px] font-bold text-emerald-500 mb-1">AFILIACIÓN (Editar)</label>
+                                <select 
+                                    className="w-full bg-black border border-zinc-700 rounded p-1.5 text-sm text-white outline-none focus:border-emerald-500"
+                                    value={formData.partyAffiliation}
+                                    onChange={(e) => setFormData({...formData, partyAffiliation: e.target.value})}
+                                >
+                                    <option value="ANR">ANR (Partido Colorado)</option>
+                                    <option value="PLRA">PLRA (Liberal)</option>
+                                    <option value="INDEPENDIENTE">INDEPENDIENTE</option>
+                                    <option value="OTRO">OTRO</option>
+                                    <option value="SIN_AFILIACION">SIN AFILIACIÓN</option>
+                                </select>
+                             </div>
+                        </div>
+                    )}
+                </div>
 
                 {/* ETIQUETAS RESTAURADAS */}
                 {isEditing && (
@@ -223,6 +305,7 @@ export default function PersonModal({
                             <h3 className="text-xs font-black text-zinc-400 uppercase flex items-center gap-2"><Tag size={12} /> Etiquetas</h3>
                             <div className="flex gap-2">
                             <select className="bg-black border border-zinc-700 text-xs text-white rounded px-2 outline-none" onChange={(e) => { handleAssignTag(e.target.value); e.target.value = ""; }}>
+                                <option value="">+ Asignar</option>
                                 <option value="">+ Asignar</option>
                                 {localTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
                             </select>

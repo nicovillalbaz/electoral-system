@@ -1,5 +1,8 @@
-import { memo } from "react";
-import { Check, User, MapPin, Truck, AlertTriangle } from "lucide-react";
+import { memo, useState, useRef, useEffect } from "react";
+import { Check, User, MapPin, Truck, AlertTriangle, DollarSign, ChevronDown, CheckCircle, X, Flag, Vote } from "lucide-react";
+import safeApi from "../../../../lib/api";
+import { toast } from "sonner"; // Assuming sonner is used, or basic alert if not. 
+// If no sonner, we'll use a simple custom indicator or just console.
 
 type Voter = {
     id: string;
@@ -10,87 +13,346 @@ type Voter = {
     status_day_d: 'PENDING' | 'SEARCHING' | 'ON_TRANSIT' | 'ARRIVED' | 'CHECKED_IN' | 'VOTED';
     logistics_flag: boolean;
     has_incentive: boolean;
+    campaign_status?: string;
+    station_checkin_at?: string;
+    assigned_station_id?: string;
+    current_vote_intent?: string;
+    has_financial_needs?: boolean;
+    financial_amount?: number;
+    notes?: string;
+    requests?: any[];
 };
 
 type Props = {
     voter: Voter;
-    onStatusChange: (id: string, status: string) => void;
-    onIncentiveClick: (id: string, name: string) => void;
+    onSelect: () => void;
+    onUpdate: (updatedVoter: any) => void;
+    stations: any[]; // List of Available PCs
 };
 
-const statusColors = {
-    PENDING: "bg-gray-100 text-gray-500",
-    SEARCHING: "bg-orange-100 text-orange-700 animate-pulse",
-    ON_TRANSIT: "bg-yellow-100 text-yellow-700",
-    ARRIVED: "bg-blue-100 text-blue-700",
-    CHECKED_IN: "bg-purple-100 text-purple-700",
-    VOTED: "bg-green-100 text-green-700 border-green-200"
+const statusColors: any = {
+    PENDING: "bg-zinc-900 text-zinc-500",
+    SEARCHING: "bg-orange-900/30 text-orange-400 animate-pulse border border-orange-800/50",
+    ON_TRANSIT: "bg-yellow-900/30 text-yellow-500 border border-yellow-800/50",
+    ARRIVED: "bg-blue-900/30 text-blue-400 border border-blue-800/50",
+    CHECKED_IN: "bg-purple-900/30 text-purple-400 border border-purple-800/50",
+    VOTED: "bg-emerald-900/30 text-emerald-500 border border-emerald-800/50"
 };
 
-const VoterRow = memo(({ voter, onStatusChange, onIncentiveClick }: Props) => {
-    
-    // Función de Click Rápido para avanzar estado
-    const handleNextStatus = () => {
-        const flow = ['PENDING', 'SEARCHING', 'ON_TRANSIT', 'ARRIVED', 'CHECKED_IN', 'VOTED'];
-        const currentIdx = flow.indexOf(voter.status_day_d);
-        if (currentIdx < flow.length - 1) {
-            onStatusChange(voter.id, flow[currentIdx + 1]);
+const statusLabels: any = {
+    PENDING: "PENDIENTE",
+    SEARCHING: "BUSCANDO",
+    ON_TRANSIT: "EN CAMINO",
+    ARRIVED: "LLEGÓ",
+    CHECKED_IN: "EN MESA",
+    VOTED: "YA VOTÓ"
+};
+
+const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
+    const [openPopover, setOpenPopover] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    // Click Outside Handler
+    const rowRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (rowRef.current && !rowRef.current.contains(event.target as Node)) {
+                setOpenPopover(null);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const handleQuickUpdate = async (patch: any, close = false) => {
+        setLoading(true);
+        try {
+            await safeApi.patch(`/persons/${voter.id}`, patch);
+            
+            // Manual triggers for specific logic
+            if (patch.campaignStatus === 'VISITED_PC' && patch.assignedStationId) {
+                 await safeApi.post('/stations/checkin', { personId: voter.id, stationId: patch.assignedStationId });
+            }
+
+            onUpdate({ ...voter, ...patch }); // Optimistic
+            if (close) setOpenPopover(null);
+        } catch (e) {
+            console.error(e);
+            alert("Error al guardar cambios.");
+        } finally {
+            setLoading(false);
         }
     };
 
-    return (
-        <div className={`flex items-center p-2 border-b border-gray-100 hover:bg-gray-50 transition-colors ${voter.status_day_d === 'VOTED' ? 'bg-green-50/30' : ''}`}>
-            {/* 1. Status Visual (Semáforo) */}
-            <button 
-                onClick={handleNextStatus}
-                className={`w-28 flex-shrink-0 text-[10px] font-bold px-2 py-1 rounded border mr-4 text-center ${statusColors[voter.status_day_d] || 'bg-gray-100'}`}
-            >
-                {voter.status_day_d}
-            </button>
+    const handleStatusChange = async (newStatus: string) => {
+        setLoading(true);
+        try {
+            await safeApi.post('/voting/status', { personId: voter.id, status: newStatus });
+            onUpdate({ ...voter, status_day_d: newStatus });
+            setOpenPopover(null);
+        } catch (e) {
+             console.error(e);
+             alert("Error al actualizar estado.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
-            {/* 2. Datos Clave */}
-            <div className="flex-1 min-w-0 mr-4">
-                <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900 truncate">
-                        {voter.last_name}, {voter.first_name}
-                    </span>
-                    {voter.logistics_flag && (
-                        <Truck size={14} className="text-blue-500" />
+    const togglePopover = (name: string, e: React.MouseEvent) => {
+        e.stopPropagation(); 
+        setOpenPopover(openPopover === name ? null : name);
+    };
+
+    // --- LOGISTICS HELPER ---
+    const getLogisticsState = () => {
+        const requests = voter.requests || [];
+        const logReq = requests.find((r:any) => r.type === 'LOGISTICS');
+        const subtypes = logReq?.subtypes || [];
+        const responsible = logReq?.responsible || "";
+        return { requests, logReq, subtypes, responsible };
+    };
+
+    // --- RENDER HELPERS ---
+    const getPCStatus = () => {
+        const hasPC = !!voter.assigned_station_id;
+        const passed = voter.campaign_status === 'VISITED_PC' || !!voter.station_checkin_at;
+        return { hasPC, passed };
+    };
+    const pcStat = getPCStatus();
+
+    return (
+        <div ref={rowRef} className={`relative flex items-center p-3 border-b border-white/5 hover:bg-white/5 transition-colors group ${voter.status_day_d === 'VOTED' ? 'bg-emerald-900/10' : ''}`}>
+            
+            {/* 1. Main Click Area (Name) */}
+            <div onClick={onSelect} className="flex-1 flex items-center cursor-pointer min-w-0 mr-4">
+                 
+                 {/* Status Badge (Static) */}
+                 <div className={`w-24 flex-shrink-0 text-[10px] font-bold px-2 py-1 rounded border border-transparent mr-4 text-center transition-colors ${statusColors[voter.status_day_d] || 'bg-zinc-900'}`}>
+                    {statusLabels[voter.status_day_d] || voter.status_day_d}
+                </div>
+
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                        <span className="font-medium text-zinc-200 truncate group-hover:text-emerald-400 transition-colors">
+                            {voter.last_name}, {voter.first_name}
+                        </span>
+                    </div>
+                    <div className="text-xs text-zinc-500 font-mono flex gap-2">
+                        <span>CI: {voter.document_id}</span>
+                        <span className="text-zinc-700">•</span>
+                        <span>Mesa {voter.voting_table_number}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* 2. Inline Action Icons */}
+            <div className="flex items-center gap-1">
+                
+                {/* A. STATUS ICON (NEW) */}
+                <div className="relative">
+                    <button 
+                        onClick={(e) => togglePopover('STATUS', e)}
+                        className={`p-2 rounded-lg transition-colors ${voter.status_day_d === 'VOTED' ? 'text-emerald-400 bg-emerald-500/10' : 'text-zinc-500 hover:bg-white/10'}`}
+                        title="Cambiar Estado de Voto"
+                    >
+                        <Vote size={18} />
+                    </button>
+                    {openPopover === 'STATUS' && (
+                        <div className="absolute right-0 top-full mt-2 w-40 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-1 flex flex-col gap-1 animate-in fade-in zoom-in-95">
+                             {['PENDING', 'ON_TRANSIT', 'CHECKED_IN', 'VOTED'].map(s => (
+                                 <button
+                                    key={s}
+                                    onClick={(e) => { e.stopPropagation(); handleStatusChange(s); }}
+                                    className={`text-[10px] font-bold px-3 py-2 rounded text-left hover:bg-white/10 ${voter.status_day_d === s ? 'text-white bg-white/5' : 'text-zinc-400'}`}
+                                 >
+                                     {statusLabels[s]}
+                                 </button>
+                             ))}
+                        </div>
                     )}
                 </div>
-                <div className="text-xs text-gray-500 font-mono">
-                    CI: {voter.document_id} • Mesa {voter.voting_table_number}
+
+                <div className="w-px h-6 bg-white/10 mx-1"></div>
+
+                {/* B. PC / STATION */}
+                <div className="relative">
+                    <button 
+                        onClick={(e) => togglePopover('PC', e)}
+                        className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${pcStat.passed ? 'bg-emerald-500/20 text-emerald-400' : (pcStat.hasPC ? 'bg-zinc-800 text-white' : 'text-zinc-600 hover:bg-white/10')}`}
+                        title={pcStat.hasPC ? "PC Asignado" : "Sin PC"}
+                    >
+                        <MapPin size={16} />
+                        {pcStat.passed && <CheckCircle size={10} className="absolute top-1 right-1" />}
+                    </button>
+                    {openPopover === 'PC' && (
+                        <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-2 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                            <label className="text-xs font-bold text-zinc-500">ASIGNAR PC</label>
+                            <select 
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
+                                defaultValue={voter.assigned_station_id || ""}
+                                onChange={(e) => handleQuickUpdate({ assignedStationId: e.target.value })}
+                            >
+                                <option value="">-- Sin Asignar --</option>
+                                {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                            <div className="flex justify-between items-center bg-zinc-950 p-2 rounded border border-zinc-800">
+                                <span className="text-xs font-bold text-zinc-400">YA PASÓ POR PC?</span>
+                                <button 
+                                    onClick={() => handleQuickUpdate({ campaignStatus: pcStat.passed ? 'NOT_VISITED' : 'VISITED_PC', assignedStationId: voter.assigned_station_id })}
+                                    className={`px-3 py-1 rounded text-xs font-bold transition-colors ${pcStat.passed ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-500'}`}
+                                >
+                                    {pcStat.passed ? 'SÍ, PASÓ' : 'NO'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
+
+                {/* C. VOTE INTENT */}
+                <div className="relative">
+                    <button 
+                         onClick={(e) => togglePopover('INTENT', e)}
+                         className={`p-2 rounded-lg transition-colors ${
+                             voter.current_vote_intent === 'SURE' ? 'text-emerald-500 bg-emerald-500/10' : 
+                             voter.current_vote_intent === 'PROBABLE' ? 'text-yellow-500' :
+                             voter.current_vote_intent === 'OPPOSITION' ? 'text-red-500' : 'text-zinc-600'
+                         } hover:bg-white/10`}
+                    >
+                        <User size={16} />
+                    </button>
+                     {openPopover === 'INTENT' && (
+                        <div className="absolute right-0 top-full mt-2 w-48 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-2 grid gap-1 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                            {[
+                                { val: 'SURE', label: 'VOTO SEGURO 🟢' },
+                                { val: 'PROBABLE', label: 'PROBABLE 🟡' },
+                                { val: 'UNDECIDED', label: 'INDECISO ⚪' },
+                                { val: 'OPPOSITION', label: 'OPOSICIÓN 🔴' },
+                            ].map(opt => (
+                                <button
+                                    key={opt.val}
+                                    onClick={() => handleQuickUpdate({ currentVoteIntent: opt.val }, true)}
+                                    className={`text-left text-xs font-bold p-2 rounded hover:bg-white/10 ${voter.current_vote_intent === opt.val ? 'bg-white/5 text-white' : 'text-zinc-400'}`}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* D. FINANCE */}
+                <div className="relative">
+                    <button 
+                        onClick={(e) => togglePopover('FINANCE', e)}
+                        className={`p-2 rounded-lg transition-colors ${voter.has_financial_needs ? 'text-green-400 bg-green-500/10' : 'text-zinc-600 hover:bg-white/10'}`}
+                    >
+                        <DollarSign size={16} />
+                    </button>
+                    {openPopover === 'FINANCE' && (
+                        <div className="absolute right-0 top-full mt-2 w-56 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-2 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                             <div className="flex justify-between">
+                                <span className="text-xs font-bold text-zinc-400">Solicita Viático?</span>
+                                <input 
+                                    type="checkbox" 
+                                    checked={voter.has_financial_needs} 
+                                    onChange={(e) => handleQuickUpdate({ hasFinancialNeeds: e.target.checked })}
+                                    className="accent-emerald-500"
+                                />
+                             </div>
+                             {voter.has_financial_needs && (
+                                 <input 
+                                     type="number" 
+                                     placeholder="Monto Gs."
+                                     className="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
+                                     defaultValue={voter.financial_amount}
+                                     onBlur={(e) => handleQuickUpdate({ financialAmount: Number(e.target.value) })}
+                                 />
+                             )}
+                        </div>
+                    )}
+                </div>
+
+                {/* E. LOGISTICS */}
+                <div className="relative">
+                    <button 
+                        onClick={(e) => togglePopover('LOGISTICS', e)}
+                        className={`p-2 rounded-lg transition-colors ${voter.logistics_flag ? 'text-blue-400 bg-blue-500/10' : 'text-zinc-600 hover:bg-white/10'}`}
+                    >
+                        <Truck size={16} />
+                    </button>
+                     {openPopover === 'LOGISTICS' && (
+                        <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-2 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                             <label className="text-xs font-bold text-zinc-500">LOGÍSTICA REQUERIDA</label>
+                             <div className="grid grid-cols-2 gap-2 mb-2">
+                                {[
+                                    { id: 'FUEL', label: 'COMBUSTIBLE' },
+                                    { id: 'TRANSPORT', label: 'TRANSPORTE' },
+                                    { id: 'SNACK', label: 'REFRIGERIO' },
+                                    { id: 'ACCOMPANIMENT', label: 'ACOMPAÑAMIENTO' },
+                                ].map(t => {
+                                    const { requests, logReq, subtypes, responsible } = getLogisticsState();
+                                    const isActive = subtypes.includes(t.id);
+                                    
+                                    return (
+                                        <button 
+                                            key={t.id}
+                                            onClick={() => {
+                                                const newSubtypes = isActive ? subtypes.filter((x:string) => x !== t.id) : [...subtypes, t.id];
+                                                const otherRequests = requests.filter((r:any) => r.type !== 'LOGISTICS');
+                                                if (newSubtypes.length > 0) {
+                                                    otherRequests.push({ type: 'LOGISTICS', subtypes: newSubtypes, responsible });
+                                                }
+                                                handleQuickUpdate({ requests: otherRequests });
+                                            }}
+                                            className={`text-[10px] font-bold p-2 rounded border ${isActive ? 'bg-blue-900/40 border-blue-500 text-blue-300' : 'border-zinc-800 text-zinc-500'}`}
+                                        >
+                                            {t.label}
+                                        </button>
+                                    )
+                                })}
+                             </div>
+                             
+                             {/* Responsible Field */}
+                             {(getLogisticsState().subtypes.length > 0) && (
+                                <input 
+                                    type="text"
+                                    placeholder="Responsable / Encargado"
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-xs text-white placeholder:text-zinc-600 focus:border-blue-500 outline-none"
+                                    defaultValue={getLogisticsState().responsible}
+                                    onBlur={(e) => {
+                                        const { requests, subtypes } = getLogisticsState();
+                                        const otherRequests = requests.filter((r:any) => r.type !== 'LOGISTICS');
+                                        otherRequests.push({ type: 'LOGISTICS', subtypes, responsible: e.target.value });
+                                        handleQuickUpdate({ requests: otherRequests });
+                                    }}
+                                />
+                             )}
+                        </div>
+                    )}
+                </div>
+
+                {/* F. NOTES */}
+                 <div className="relative">
+                    <button 
+                        onClick={(e) => togglePopover('NOTES', e)}
+                        className={`p-2 rounded-lg transition-colors ${voter.notes ? 'text-orange-400' : 'text-zinc-700 hover:bg-white/10'}`}
+                    >
+                        <AlertTriangle size={16} />
+                    </button>
+                    {openPopover === 'NOTES' && (
+                        <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-2 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                             <label className="text-xs font-bold text-zinc-500">NOTAS / OBSERVACIONES</label>
+                             <textarea 
+                                className="bg-zinc-950 border border-zinc-800 rounded p-2 text-xs text-white h-20 resize-none"
+                                defaultValue={voter.notes || ""}
+                                onBlur={(e) => handleQuickUpdate({ notes: e.target.value })}
+                             />
+                        </div>
+                    )}
+                </div>
+
             </div>
-
-            {/* 3. Acciones Rápidas */}
-            <div className="flex items-center gap-2">
-                {/* Botón Logística (Auto) */}
-                <button 
-                    onClick={() => onStatusChange(voter.id, 'ON_TRANSIT')}
-                    className={`p-1.5 rounded hover:bg-gray-200 ${voter.status_day_d === 'ON_TRANSIT' ? 'text-yellow-600 bg-yellow-50' : 'text-gray-400'}`}
-                    title="En Tránsito"
-                >
-                    <Truck size={16} />
-                </button>
-
-                {/* Botón Local (Pin) */}
-                <button 
-                     onClick={() => onStatusChange(voter.id, 'ARRIVED')}
-                     className={`p-1.5 rounded hover:bg-gray-200 ${voter.status_day_d === 'ARRIVED' ? 'text-blue-600 bg-blue-50' : 'text-gray-400'}`}
-                     title="En Local"
-                >
-                    <MapPin size={16} />
-                </button>
-
-                {/* Celda Discreta (Incentivo) */}
-                <button 
-                    onClick={() => onIncentiveClick(voter.id, `${voter.first_name} ${voter.last_name}`)}
-                    className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${voter.has_incentive ? 'bg-green-500 text-white' : 'bg-gray-100 hover:bg-gray-200 text-transparent hover:text-gray-400'}`}
-                >
-                    <span className="w-1.5 h-1.5 bg-current rounded-full" />
-                </button>
-            </div>
+            
         </div>
     );
 });

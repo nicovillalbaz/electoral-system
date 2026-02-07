@@ -26,7 +26,9 @@ export async function checkinsRoutes(app: FastifyInstance) {
       notes: z.string().optional(),
     }).parse(req.body);
 
-    // 🔒 CERROJO DEL DÍA D: Verificar si ya pasó por CUALQUIER puesto hoy
+    let warning: string | undefined;
+
+    // 🔒 CERROJO DEL DÍA D (SOFT): Verificar si ya pasó por CUALQUIER puesto hoy
     const existingCheck = await query(
       `SELECT s.name as station_name, sc.checkin_at
        FROM station_checkins sc 
@@ -38,10 +40,10 @@ export async function checkinsRoutes(app: FastifyInstance) {
     );
 
     if (existingCheck.rows.length > 0) {
-       // ALERTA CRÍTICA AL FRONTEND
+       // AVISO en lugar de bloqueo
        const station = existingCheck.rows[0].station_name;
        const time = new Date(existingCheck.rows[0].checkin_at).toLocaleTimeString('es-PY', {hour: '2-digit', minute:'2-digit'});
-       throw badRequest(`⛔ ALERTA DE FRAUDE: Esta persona YA SE REGISTRÓ hoy a las ${time} en el puesto: "${station}".`);
+       warning = `Atención: Esta persona ya pasó hoy a las ${time} por: "${station}".`;
     }
 
     try {
@@ -64,9 +66,9 @@ export async function checkinsRoutes(app: FastifyInstance) {
         payload: { voteIntentSnapshot: body.voteIntentSnapshot ?? null },
       });
 
-      return row;
+      return { ...row, warning };
     } catch (e: any) {
-      if (e?.code === "23505") throw badRequest("Ya registrado en este puesto (Duplicado local).");
+      if (e?.code === "23505") throw badRequest("Esta persona ya está registrada en ESTE puesto.");
       throw e;
     }
   });
