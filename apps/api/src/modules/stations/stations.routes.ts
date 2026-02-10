@@ -1,7 +1,8 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireRole } from "../../common/middleware/role";
-import { stationCreate, stationList, getStationStats, getStationCheckins, checkInToStation } from "./stations.repo";
+import { notFound } from "../../common/http/errors";
+import { stationCreate, stationList, getStationStats, getStationCheckins, checkInToStation, stationUpdate } from "./stations.repo";
 
 export async function stationsRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
@@ -15,6 +16,7 @@ export async function stationsRoutes(app: FastifyInstance) {
       cityId: z.string().uuid().optional(),
       zoneId: z.string().uuid().optional(),
       neighborhoodId: z.string().uuid().optional(),
+      managerUserId: z.string().uuid().optional(),
     }).parse(req.body);
 
     return stationCreate(req.user.campaignId, body);
@@ -28,6 +30,24 @@ export async function stationsRoutes(app: FastifyInstance) {
   app.get("/:id/checkins", { preHandler: [app.requireAuth] }, async (req: any) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     return getStationCheckins(req.user.campaignId, id);
+  });
+
+  app.patch("/:id", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR","STATION_MANAGER"])] }, async (req: any) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = z.object({
+        name: z.string().min(2).optional(),
+        address: z.string().optional(),
+        cityId: z.string().uuid().optional(),
+        zoneId: z.string().uuid().optional(),
+        neighborhoodId: z.string().uuid().optional(),
+        managerUserId: z.string().uuid().optional(),
+        notes: z.string().optional(),
+        metadata: z.any().optional(),
+    }).parse(req.body);
+
+    const updated = await stationUpdate(req.user.campaignId, id, body);
+    if (!updated) throw notFound("Station not found");
+    return updated;
   });
 
   app.post("/checkin", { preHandler: [app.requireAuth] }, async (req: any) => {
@@ -58,12 +78,26 @@ export async function stationsRoutes(app: FastifyInstance) {
   app.post("/:id/collaborators", { preHandler: [app.requireAuth] }, async (req: any) => {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = z.object({
-        personId: z.string().uuid(),
-        role: z.string()
+        personId: z.string().uuid().optional().nullable(),
+        role: z.string(),
+        // Document ID is now strictly required
+        documentId: z.string().min(3),
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
     }).parse(req.body);
 
     const { addCollaborator } = require("./stations.repo");
-    return addCollaborator(req.user.campaignId, params.id, body.personId, body.role);
+    return addCollaborator(
+        req.user.campaignId, 
+        params.id, 
+        body.personId ?? null, 
+        body.role,
+        {
+            documentId: body.documentId,
+            firstName: body.firstName,
+            lastName: body.lastName
+        }
+    );
   });
 
   app.delete("/:id/collaborators/:personId", { preHandler: [app.requireAuth] }, async (req: any) => {

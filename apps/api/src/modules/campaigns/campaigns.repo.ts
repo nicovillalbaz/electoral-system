@@ -1,9 +1,9 @@
 import { query } from "../../db/query";
 
-export async function campaignCreate(name: string, cityId: string) {
+export async function campaignCreate(name: string, cityId: string, parentCampaignId?: string) {
   const res = await query(
-    `INSERT INTO campaigns (name, city_id, status) VALUES ($1, $2, 'ACTIVE') RETURNING *`,
-    [name, cityId]
+    `INSERT INTO campaigns (name, city_id, status, parent_campaign_id) VALUES ($1, $2, 'ACTIVE', $3) RETURNING *`,
+    [name, cityId, parentCampaignId || null]
   );
   return res.rows[0];
 }

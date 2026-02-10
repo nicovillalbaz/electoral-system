@@ -56,20 +56,30 @@ export default function ActivitiesPage() {
   const [debouncedSearch] = useDebounce(search, 500);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "PENDING" | "COMPLETED">("PENDING");
   const [typeFilter, setTypeFilter] = useState<string>("");
+  const [onlyMine, setOnlyMine] = useState(false); // <--- New State
+  const [currentUser, setCurrentUser] = useState<any>(null); // <--- User State
 
   // Calendar State
   const [currentDate, setCurrentDate] = useState(new Date());
 
   useEffect(() => {
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+        try { setCurrentUser(JSON.parse(userStr)); } catch(e){}
+    }
+  }, []);
+
+  useEffect(() => {
     fetchTasks();
-  }, [debouncedSearch, statusFilter, typeFilter, view, currentDate]);
+  }, [debouncedSearch, statusFilter, typeFilter, view, currentDate, onlyMine, currentUser]);
 
   const fetchTasks = async () => {
     setLoading(true);
     try {
       const params: any = { 
         q: debouncedSearch,
-        status: statusFilter === "ALL" ? undefined : statusFilter 
+        status: statusFilter === "ALL" ? undefined : statusFilter,
+        assignedUserId: onlyMine && currentUser ? currentUser.id : undefined // <--- Filter Logic
       };
 
       if (typeFilter) params.taskType = typeFilter;
@@ -256,6 +266,19 @@ export default function ActivitiesPage() {
         </div>
         
         <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+            <button 
+                onClick={() => setOnlyMine(!onlyMine)}
+                className={clsx(
+                    "px-3 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 border transition-all whitespace-nowrap",
+                    onlyMine 
+                        ? "bg-blue-600 border-blue-500 text-white shadow-[0_0_15px_rgba(37,99,235,0.3)]" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-600"
+                )}
+            >
+                <CheckCircle2 size={16} className={onlyMine ? "text-white" : "text-zinc-600"} />
+                Mis Actividades
+            </button>
+
             <select 
                 className="bg-black border border-zinc-800 rounded-lg p-2.5 text-sm text-zinc-300 outline-none focus:border-zinc-600 min-w-[120px]"
                 value={typeFilter}

@@ -68,6 +68,7 @@ export async function votingRoutes(app: FastifyInstance) {
       pickupAddress: z.string(),
       destinationAddress: z.string().optional(),
       notes: z.string().optional(),
+      assignedUserId: z.string().uuid().optional(), // <--- Added
     }).parse(req.body);
 
     return createTransportTask(req.user.campaignId, req.user.userId, body);
@@ -77,7 +78,8 @@ export async function votingRoutes(app: FastifyInstance) {
   app.post("/financial", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR"])] }, async (req: any) => {
     const body = z.object({
         personId: z.string().uuid(),
-        notes: z.string().optional()
+        notes: z.string().optional(),
+        assignedUserId: z.string().uuid().optional(), // <--- Added
     }).parse(req.body);
 
     return createFinancialTask(req.user.campaignId, req.user.userId, body);

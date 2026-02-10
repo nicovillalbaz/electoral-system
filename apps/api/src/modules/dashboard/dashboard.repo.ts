@@ -8,7 +8,7 @@ export async function totals(campaignId: string) {
        SUM(CASE WHEN NOT has_voted THEN 1 ELSE 0 END)::int AS missing,
        SUM(CASE WHEN current_vote_intent = 'SURE' THEN 1 ELSE 0 END)::int AS sure_votes
      FROM persons
-     WHERE campaign_id=$1`,
+     WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))`,
     [campaignId]
   );
   return res.rows[0];
@@ -18,7 +18,7 @@ export async function voteIntentBreakdown(campaignId: string) {
   const res = await query(
     `SELECT current_vote_intent as label, COUNT(*)::int AS value
      FROM persons
-     WHERE campaign_id=$1
+     WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))
      GROUP BY current_vote_intent
      ORDER BY value DESC`,
     [campaignId]
@@ -37,7 +37,8 @@ export async function missingByZone(campaignId: string, limit = 20) {
      LEFT JOIN polling_tables pt ON g.voting_table_id = pt.id
      LEFT JOIN polling_places pp ON pt.polling_place_id = pp.id
      LEFT JOIN zones z ON pp.zone_id = z.id
-     WHERE p.campaign_id=$1 AND p.has_voted=false
+     WHERE (p.campaign_id=$1 OR p.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) 
+       AND p.has_voted=false
      GROUP BY z.name
      ORDER BY value DESC
      LIMIT $2`,
@@ -57,7 +58,7 @@ export async function performanceByZone(campaignId: string) {
      LEFT JOIN polling_tables pt ON g.voting_table_id = pt.id
      LEFT JOIN polling_places pp ON pt.polling_place_id = pp.id
      LEFT JOIN zones z ON pp.zone_id = z.id
-     WHERE p.campaign_id=$1
+     WHERE (p.campaign_id=$1 OR p.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))
      GROUP BY z.name
      ORDER BY total DESC`,
     [campaignId]
@@ -75,7 +76,8 @@ export async function stationActivity(campaignId: string, hours = 24, limit = 20
     `SELECT s.name as station_name, COUNT(*)::int AS checkins
      FROM station_checkins sc
      JOIN stations s ON sc.station_id = s.id
-     WHERE sc.campaign_id=$1 AND sc.checkin_at >= now() - ($2 || ' hours')::interval
+     WHERE (sc.campaign_id=$1 OR sc.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) 
+       AND sc.checkin_at >= now() - ($2 || ' hours')::interval
      GROUP BY s.name
      ORDER BY checkins DESC
      LIMIT $3`,

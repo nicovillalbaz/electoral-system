@@ -205,6 +205,9 @@ export default function PersonsPage() {
         <button onClick={() => setShowFilterModal(true)} className="bg-zinc-900 border border-zinc-800 text-zinc-400 px-4 rounded-xl hover:text-white hover:border-zinc-600 transition-colors flex items-center gap-2">
             <SlidersHorizontal size={20} /> <span className="hidden md:inline">Filtros</span>
         </button>
+        <button onClick={() => setShowFilterModal(true)} className="bg-zinc-900 border border-zinc-800 text-zinc-400 px-4 rounded-xl hover:text-white hover:border-zinc-600 transition-colors flex items-center gap-2">
+            <SlidersHorizontal size={20} /> <span className="hidden md:inline">Filtros</span>
+        </button>
       </div>
 
       {/* TABLA */}
@@ -273,6 +276,8 @@ export default function PersonsPage() {
         availableAddresses={availableAddresses} 
         availableTags={availableTags}
       />
+      
+
     
   )
 

@@ -42,6 +42,7 @@ export default function PersonModal({
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [stations, setStations] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]); // <--- Users List
 
   const [formData, setFormData] = useState({
     documentId: "", // CREATE ONLY
@@ -52,23 +53,30 @@ export default function PersonModal({
     address: "", // "Barrio"
     exactAddress: "", 
     assignedStationId: "",
+    assignedUserId: "", // <--- New Field
     currentVoteIntent: "UNDECIDED",
     campaignStatus: "NOT_VISITED",
     notes: "",
     needsTransport: false,
     transportStatus: "PENDING",
     // New Fields
-    requests: [] as string[],
+    requests: [] as any[], // Changed to array of objects { detail, type, assignedUserId, ... }
     hasFinancialNeeds: false,
     financialNeedsFulfilled: false,
     financialAmount: 0,
-    partyAffiliation: "ANR" // <--- Nuevo Campo
+    partyAffiliation: "ANR" 
   });
+  
+  // Custom State for New Request Input
+  const [newRequestDetail, setNewRequestDetail] = useState("");
+  const [newRequestType, setNewRequestType] = useState("LOGISTICS");
+  const [newRequestAssignee, setNewRequestAssignee] = useState("");
 
   // Load Reference Data
   useEffect(() => {
     if (isOpen) { 
         loadStations(); 
+        loadUsers(); // <--- Load Users 
         if (personToEdit) {
             setFormData({
                 documentId: personToEdit.document_id,
@@ -79,6 +87,7 @@ export default function PersonModal({
                 address: personToEdit.address || "",
                 exactAddress: personToEdit.exact_address || "",
                 assignedStationId: personToEdit.assigned_station_id || "",
+                assignedUserId: personToEdit.assigned_user_id || "", // <--- Load Value
                 currentVoteIntent: personToEdit.current_vote_intent || "UNDECIDED",
                 campaignStatus: personToEdit.campaign_status || "NOT_VISITED",
                 notes: personToEdit.notes || "",
@@ -99,10 +108,10 @@ export default function PersonModal({
              setFormData({
                 documentId: "", firstName: "", lastName: "",
                 phoneNumber: "", whatsappNumber: "", address: "", exactAddress: "",
-                assignedStationId: "", currentVoteIntent: "UNDECIDED", campaignStatus: "NOT_VISITED",
+                assignedStationId: "", assignedUserId: "", currentVoteIntent: "UNDECIDED", campaignStatus: "NOT_VISITED",
                 notes: "", needsTransport: false, transportStatus: "PENDING",
                 requests: [], hasFinancialNeeds: false, financialNeedsFulfilled: false, financialAmount: 0,
-                partyAffiliation: "ANR" // <--- Reset
+                partyAffiliation: "ANR"
             });
             setAssignedTags([]);
             setHistory([]);
@@ -112,6 +121,10 @@ export default function PersonModal({
 
   const loadStations = async () => {
       try { const res = await api.get('/stations'); setStations(res.data); } catch(e){}
+  };
+
+  const loadUsers = async () => {
+      try { const res = await api.get('/users'); setUsers(res.data); } catch(e){}
   };
 
   const fetchTags = async (pid: string) => {
@@ -192,6 +205,7 @@ export default function PersonModal({
         
         check('exactAddress', 'exact_address');
         check('assignedStationId', 'assigned_station_id');
+        check('assignedUserId', 'assigned_user_id'); // <--- Check Change
         check('currentVoteIntent', 'current_vote_intent');
         check('campaignStatus', 'campaign_status');
         check('notes', 'notes');
@@ -205,8 +219,10 @@ export default function PersonModal({
         check('partyAffiliation', 'party_affiliation');
 
         // Requests Array Logic (Compare as sets/JSON)
-        const formReqs = JSON.stringify([...formData.requests].sort());
-        const origReqs = JSON.stringify([...(personToEdit.requests || [])].sort());
+        // Requests Array Logic (Compare as sets/JSON)
+        // We now store objects, but backend might expect array of jsonb.
+        const formReqs = JSON.stringify(formData.requests);
+        const origReqs = JSON.stringify(personToEdit.requests || []);
         if (formReqs !== origReqs) {
             payload.requests = formData.requests;
         }
@@ -354,15 +370,23 @@ export default function PersonModal({
                             </datalist>
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-zinc-500 mb-1">PUESTO ASIGNADO (PC)</label>
                             <select className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500" value={formData.assignedStationId} onChange={(e) => setFormData({ ...formData, assignedStationId: e.target.value })}>
                                 <option value="">-- Ninguno --</option>
                                 {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                         </div>
-                        <div className="col-span-2">
-                             <label className="block text-xs font-bold text-zinc-500 mb-1">REFERENCIA / DIRECCIÓN EXACTA</label>
-                             <input className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500" value={formData.exactAddress} onChange={e => setFormData({...formData, exactAddress: e.target.value})} placeholder="Ej: Portón verde, frente a la plaza..." />
+                        <div className="col-span-2 grid grid-cols-2 gap-4">
+                             <div>
+                                <label className="block text-xs font-bold text-zinc-500 mb-1">REFERENCIA / DIRECCIÓN EXACTA</label>
+                                <input className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500" value={formData.exactAddress} onChange={e => setFormData({...formData, exactAddress: e.target.value})} placeholder="Ej: Portón verde..." />
+                             </div>
+                             <div>
+                                <label className="block text-xs font-bold text-zinc-500 mb-1">RESPONSABLE (Líder/Puntero)</label>
+                                <select className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500" value={formData.assignedUserId} onChange={(e) => setFormData({ ...formData, assignedUserId: e.target.value })}>
+                                    <option value="">-- Nadie --</option>
+                                    {users.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                                </select>
+                             </div>
                         </div>
                     </div>
                 </div>
@@ -395,35 +419,102 @@ export default function PersonModal({
                          <label className="block text-xs font-bold text-zinc-500 mb-1">NOTAS</label>
                          <textarea className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white h-20 outline-none resize-none" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="..." />
                     </div>
-                    {/* PEDIDOS (LISTA) */}
+                    {/* PEDIDOS (LISTA MEJORADA) */}
                     <div>
-                         <label className="block text-xs font-bold text-zinc-500 mb-2">📋 PEDIDOS (Medicamentos, remeras, etc.)</label>
+                         <label className="block text-xs font-bold text-zinc-500 mb-2">📋 PEDIDOS / LOGÍSTICA</label>
                          <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-                             <div className="p-2 border-b border-zinc-800 flex gap-2">
-                                <input 
-                                    className="flex-1 bg-black border border-zinc-700 rounded px-2 py-1 text-sm text-white outline-none placeholder-zinc-600"
-                                    placeholder="Escribir pedido..."
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            const val = e.currentTarget.value.trim();
-                                            if (val) {
-                                                setFormData({ ...formData, requests: [...formData.requests, val] });
-                                                e.currentTarget.value = "";
+                             <div className="p-3 border-b border-zinc-800 space-y-2">
+                                <div className="flex gap-2">
+                                    <select 
+                                        className="bg-black border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none"
+                                        value={newRequestType}
+                                        onChange={e => setNewRequestType(e.target.value)}
+                                    >
+                                        <option value="LOGISTICS">Logística</option>
+                                        <option value="MEDICINE">Medicamentos</option>
+                                        <option value="FINANCIAL">Aporte</option>
+                                        <option value="OTHER">Otro</option>
+                                    </select>
+                                    <select 
+                                        className="flex-1 bg-black border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none"
+                                        value={newRequestAssignee}
+                                        onChange={e => setNewRequestAssignee(e.target.value)}
+                                    >
+                                        <option value="">-- Asignar Responsable (Opcional) --</option>
+                                        {users.map(u => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+                                    </select>
+                                </div>
+                                <div className="flex gap-2">
+                                    <input 
+                                        className="flex-1 bg-black border border-zinc-700 rounded px-2 py-1 text-sm text-white outline-none placeholder-zinc-600"
+                                        placeholder="Detalle (Ej: Combustible, Remedios...)"
+                                        value={newRequestDetail}
+                                        onChange={(e) => setNewRequestDetail(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                const val = newRequestDetail.trim();
+                                                if (val) {
+                                                    const newReq = {
+                                                        type: newRequestType,
+                                                        detail: val,
+                                                        assignedUserId: newRequestAssignee || null,
+                                                        status: 'PENDING',
+                                                        createdAt: new Date().toISOString()
+                                                    };
+                                                    setFormData({ ...formData, requests: [...formData.requests, newReq] });
+                                                    setNewRequestDetail("");
+                                                    setNewRequestAssignee("");
+                                                }
                                             }
-                                        }
-                                    }}
-                                />
-                                <button type="button" className="text-xs font-bold bg-zinc-800 px-3 rounded hover:bg-zinc-700 text-white">AGREGAR</button>
+                                        }}
+                                    />
+                                    <button 
+                                        type="button" 
+                                        className="text-xs font-bold bg-zinc-800 px-3 rounded hover:bg-zinc-700 text-white"
+                                        onClick={() => {
+                                            const val = newRequestDetail.trim();
+                                            if (val) {
+                                                const newReq = {
+                                                    type: newRequestType,
+                                                    detail: val,
+                                                    assignedUserId: newRequestAssignee || null,
+                                                    status: 'PENDING',
+                                                    createdAt: new Date().toISOString()
+                                                };
+                                                setFormData({ ...formData, requests: [...formData.requests, newReq] });
+                                                setNewRequestDetail("");
+                                                setNewRequestAssignee("");
+                                            }
+                                        }}
+                                    >
+                                        AGREGAR
+                                    </button>
+                                </div>
                              </div>
-                             <div className="p-2 max-h-32 overflow-y-auto space-y-1">
+                             <div className="p-2 max-h-40 overflow-y-auto space-y-1">
                                 {formData.requests.length === 0 && <p className="text-xs text-zinc-600 italic text-center py-2">- Sin pedidos registrados -</p>}
-                                {formData.requests.map((req, idx) => (
-                                    <div key={idx} className="flex justify-between items-center text-sm bg-zinc-950/50 px-2 py-1 rounded border border-zinc-800/50">
-                                        <span className="text-zinc-300">{req}</span>
-                                        <button type="button" onClick={() => setFormData({...formData, requests: formData.requests.filter((_, i) => i !== idx)})} className="text-red-500 hover:bg-red-950/30 p-1 rounded"><X size={12} /></button>
-                                    </div>
-                                ))}
+                                {formData.requests.map((req, idx) => {
+                                    // Handle legacy string requests or new objects
+                                    const isString = typeof req === 'string';
+                                    const detail = isString ? req : req.detail;
+                                    const type = isString ? 'LOGISTICS' : req.type;
+                                    const assigneeId = isString ? null : req.assignedUserId;
+                                    const assigneeName = assigneeId ? users.find(u => u.id === assigneeId)?.full_name : null;
+
+                                    return (
+                                        <div key={idx} className="flex justify-between items-center text-sm bg-zinc-950/50 px-2 py-1.5 rounded border border-zinc-800/50">
+                                            <div className="flex flex-col leading-tight">
+                                                <span className="text-zinc-300">
+                                                    <span className="text-[10px] bg-zinc-800 px-1 rounded mr-2 text-zinc-400">{type}</span>
+                                                    {detail}
+                                                </span>
+                                                {assigneeName && <span className="text-[10px] text-blue-400 pl-1">➡ Resp: {assigneeName}</span>}
+                                            </div>
+                                            <button type="button" onClick={() => setFormData({...formData, requests: formData.requests.filter((_, i) => i !== idx)})} className="text-red-500 hover:bg-red-950/30 p-1 rounded"><X size={12} /></button>
+                                        </div>
+                                    );
+                                })}
                              </div>
                          </div>
                     </div>

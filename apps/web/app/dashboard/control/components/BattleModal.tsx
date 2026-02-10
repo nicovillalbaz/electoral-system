@@ -22,8 +22,24 @@ interface BattleModalProps {
   onUpdate: () => void; // Trigger refresh
 }
 
+interface User {
+    id: string;
+    full_name: string;
+    role: string;
+}
+
 export default function BattleModal({ person, onClose, onUpdate }: BattleModalProps) {
   const [loading, setLoading] = useState<string | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [assignedUserId, setAssignedUserId] = useState<string>("");
+
+  // Load Users for Assignment
+  useState(() => {
+      fetch('/api/users?limit=100').then(res => res.json()).then(data => {
+          setUsers(data.data || []);
+      }).catch(err => console.error("Failed to load users", err));
+  });
+
   const [transportAddress, setTransportAddress] = useState(person.address || "");
   const [showTransportInput, setShowTransportInput] = useState(false);
   const [showFinancialConfirm, setShowFinancialConfirm] = useState(false);
@@ -57,7 +73,8 @@ export default function BattleModal({ person, onClose, onUpdate }: BattleModalPr
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
                 personId: person.id,
-                pickupAddress: transportAddress
+                pickupAddress: transportAddress,
+                assignedUserId: assignedUserId || undefined // <--- Pass assignee
             })
         });
         if (!res.ok) throw new Error("Error requesting transport");
@@ -79,7 +96,8 @@ export default function BattleModal({ person, onClose, onUpdate }: BattleModalPr
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
-                personId: person.id
+                personId: person.id,
+                assignedUserId: assignedUserId || undefined // <--- Pass assignee
             })
         });
         if (!res.ok) throw new Error("Error requesting financial");
@@ -210,6 +228,16 @@ export default function BattleModal({ person, onClose, onUpdate }: BattleModalPr
                     value={transportAddress}
                     onChange={(e) => setTransportAddress(e.target.value)}
                  />
+                  <select 
+                      className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm text-white"
+                      value={assignedUserId}
+                      onChange={(e) => setAssignedUserId(e.target.value)}
+                  >
+                      <option value="">-- Asignar Chofer/Responsable (Opcional) --</option>
+                      {users.map(u => (
+                          <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
+                      ))}
+                  </select>
                  <div className="flex gap-2 h-full">
                      <button onClick={() => setShowTransportInput(false)} className="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs text-white">Cancelar</button>
                      <button 
@@ -235,6 +263,16 @@ export default function BattleModal({ person, onClose, onUpdate }: BattleModalPr
           ) : (
             <div className="h-28 flex flex-col items-center justify-center gap-2 p-3 rounded-xl border border-yellow-500/50 bg-yellow-900/10">
                 <span className="text-yellow-200 text-sm font-bold text-center">¿Confirmar solicitud financiera URGENTE?</span>
+                <select 
+                      className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white mb-1"
+                      value={assignedUserId}
+                      onChange={(e) => setAssignedUserId(e.target.value)}
+                  >
+                      <option value="">-- Asignar Responsable (Opcional) --</option>
+                      {users.map(u => (
+                          <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
+                      ))}
+                  </select>
                 <div className="flex gap-2 w-full">
                      <button onClick={() => setShowFinancialConfirm(false)} className="flex-1 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs text-white">No</button>
                      <button 

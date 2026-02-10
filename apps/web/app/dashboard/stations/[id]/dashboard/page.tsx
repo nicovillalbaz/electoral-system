@@ -4,8 +4,10 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import useSWR from "swr"; // Assuming SWR is used or React Query. Checking imports.
 // Fallback to fetch or safeApi if no SWR.
-import safeApi from "../../../../../../lib/api"; 
+import safeApi from "../../../../../lib/api"; 
 import { Users, Truck, AlertTriangle, CheckCircle, Search, Plus, Trash2, Fuel, Sandwich, Bus } from "lucide-react";
+
+import TeamMemberModal from "./TeamMemberModal"; // Local Component
 
 // --- TYPES ---
 type DashboardData = {
@@ -60,14 +62,9 @@ export default function StationDashboardPage() {
     }, [stationId, page, search]); // Re-fetch on params change
 
     // --- ACTIONS ---
-    const handleAddCollaborator = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const form = e.target as HTMLFormElement;
-        const personId = (form.elements.namedItem('personId') as HTMLInputElement).value; // Mock for now, need search
-        const role = (form.elements.namedItem('role') as HTMLSelectElement).value;
-        
+    const handleAddCollaborator = async (personId: string | null, role: string, citizenData?: any) => {
         try {
-            await safeApi.post(`/stations/${stationId}/collaborators`, { personId, role });
+            await safeApi.post(`/stations/${stationId}/collaborators`, { personId, role, ...citizenData });
             fetchData(); // Refresh
             setIsAddingCollab(false);
         } catch (e) {
@@ -110,26 +107,19 @@ export default function StationDashboardPage() {
                             <Users size={18} /> Equipo PC
                         </h2>
                         <button 
-                            onClick={() => setIsAddingCollab(!isAddingCollab)} 
+                            onClick={() => setIsAddingCollab(true)} 
                             className="bg-zinc-800 hover:bg-zinc-700 p-1 rounded transition"
                         >
                             <Plus size={16} />
                         </button>
                     </div>
 
-                    {isAddingCollab && (
-                        <form onSubmit={handleAddCollaborator} className="bg-zinc-950 p-3 rounded mb-4 border border-zinc-800 animate-in fade-in slide-in-from-top-2">
-                            <div className="text-xs font-bold text-zinc-500 mb-2">AGREGAR MIEMBRO</div>
-                            <input name="personId" placeholder="Person ID for now (Need Search)" className="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-xs mb-2" required />
-                            <select name="role" className="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-xs mb-2">
-                                <option value="JEFE">JEFE DE PC</option>
-                                <option value="logistica">LOGÍSTICA</option>
-                                <option value="SEGURIDAD">SEGURIDAD</option>
-                                <option value="CHOFER">CHOFER</option>
-                            </select>
-                            <button className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2 rounded">AGREGAR</button>
-                        </form>
-                    )}
+                    {/* Integrated Modal */}
+                    <TeamMemberModal 
+                        isOpen={isAddingCollab}
+                        onClose={() => setIsAddingCollab(false)}
+                        onConfirm={handleAddCollaborator}
+                    />
 
                     <div className="space-y-2">
                         {data.collaborators.length === 0 && <div className="text-zinc-600 text-xs italic">Sin equipo asignado.</div>}

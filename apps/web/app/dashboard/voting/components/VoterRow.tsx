@@ -57,6 +57,10 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
     const [tempFinance, setTempFinance] = useState({ active: false, amount: 0 });
     const [tempNotes, setTempNotes] = useState("");
     const [tempLogistics, setTempLogistics] = useState<{subtypes: string[], responsible: string}>({ subtypes: [], responsible: "" });
+    
+    // Users for Logistics
+    const [userOptions, setUserOptions] = useState<any[]>([]);
+    const [usersLoaded, setUsersLoaded] = useState(false);
 
     // Click Outside Handler
     const rowRef = useRef<HTMLDivElement>(null);
@@ -92,10 +96,18 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
             const logReq = requests.find((r:any) => r.type === 'LOGISTICS');
             setTempLogistics({
                 subtypes: logReq?.subtypes || [],
-                responsible: logReq?.responsible || ""
+                responsible: logReq?.assignedUserId || logReq?.responsible || "" // Prefer ID
             });
+            
+            // Load users if not loaded
+            if (!usersLoaded) {
+                safeApi.get('/users?limit=100').then(res => {
+                    setUserOptions(res.data.data || []);
+                    setUsersLoaded(true);
+                }).catch(() => {});
+            }
         }
-    }, [openPopover, voter]);
+    }, [openPopover, voter, usersLoaded]);
 
 
     const handleSave = async () => {
@@ -128,10 +140,12 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                 const otherRequests = requests.filter((r:any) => r.type !== 'LOGISTICS');
                 
                 if (tempLogistics.subtypes.length > 0) {
+                    const selectedUser = userOptions.find(u => u.id === tempLogistics.responsible);
                     otherRequests.push({ 
                         type: 'LOGISTICS', 
                         subtypes: tempLogistics.subtypes, 
-                        responsible: tempLogistics.responsible 
+                        responsible: selectedUser ? selectedUser.full_name : tempLogistics.responsible,
+                        assignedUserId: selectedUser ? selectedUser.id : undefined // <--- Add ID
                     });
                 }
                 patch.requests = otherRequests;
@@ -397,16 +411,17 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                                 })}
                              </div>
                              
-                             {/* Responsible Field */}
-                             {(tempLogistics.subtypes.length > 0) && (
-                                <input 
-                                    type="text"
-                                    placeholder="Responsable / Encargado"
-                                    className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-xs text-white placeholder:text-zinc-600 focus:border-blue-500 outline-none"
-                                    value={tempLogistics.responsible}
-                                    onChange={(e) => setTempLogistics({ ...tempLogistics, responsible: e.target.value })}
-                                />
-                             )}
+                              {/* Responsible Field */}
+                              {(tempLogistics.subtypes.length > 0) && (
+                                 <select 
+                                     className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-xs text-white placeholder:text-zinc-600 focus:border-blue-500 outline-none"
+                                     value={tempLogistics.responsible}
+                                     onChange={(e) => setTempLogistics({ ...tempLogistics, responsible: e.target.value })}
+                                 >
+                                     <option value="">-- Asignar Responsable --</option>
+                                     {userOptions.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                                 </select>
+                              )}
 
                             <button 
                                 onClick={handleSave}

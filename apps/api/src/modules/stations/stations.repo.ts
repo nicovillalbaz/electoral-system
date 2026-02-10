@@ -2,8 +2,8 @@ import { query } from "../../db/query";
 
 export async function stationCreate(campaignId: string, data: any) {
   const res = await query(
-    `INSERT INTO stations (campaign_id, name, status, city_id, zone_id, neighborhood_id, address)
-     VALUES ($1,$2,'ACTIVE',$3,$4,$5,$6)
+    `INSERT INTO stations (campaign_id, name, status, city_id, zone_id, neighborhood_id, address, manager_user_id)
+     VALUES ($1,$2,'ACTIVE',$3,$4,$5,$6,$7)
      RETURNING *`,
     [
       campaignId,
@@ -12,6 +12,7 @@ export async function stationCreate(campaignId: string, data: any) {
       data.zoneId ?? null,
       data.neighborhoodId ?? null,
       data.address ?? null,
+      data.managerUserId ?? null,
     ]
   );
   return res.rows[0];
@@ -35,6 +36,35 @@ export async function stationList(campaignId: string) {
       assigned_count: parseInt(r.assigned_count),
       voted_count: parseInt(r.voted_count)
   }));
+}
+
+export async function stationUpdate(campaignId: string, id: string, data: any) {
+    const res = await query(
+        `UPDATE stations 
+         SET name = COALESCE($3, name),
+             city_id = COALESCE($4, city_id),
+             zone_id = COALESCE($5, zone_id),
+             neighborhood_id = COALESCE($6, neighborhood_id),
+             address = COALESCE($7, address),
+             manager_user_id = COALESCE($8, manager_user_id),
+             notes = COALESCE($9, notes),
+             metadata = COALESCE($10, metadata)
+         WHERE id=$1 AND campaign_id=$2
+         RETURNING *`,
+        [
+            id, 
+            campaignId, 
+            data.name, 
+            data.cityId, 
+            data.zoneId, 
+            data.neighborhoodId, 
+            data.address, 
+            data.managerUserId,
+            data.notes,
+            data.metadata
+        ]
+    );
+    return res.rows[0];
 }
 
 export async function stationDelete(campaignId: string, id: string) {
@@ -123,13 +153,74 @@ export async function checkInToStation(campaignId: string, stationId: string, pe
 
 // --- TEAM MANAGEMENT ---
 
-export async function addCollaborator(campaignId: string, stationId: string, personId: string, role: string) {
+// --- TEAM MANAGEMENT ---
+
+import { personCreate } from "../persons/persons.repo";
+import { query as _query } from "../../db/query"; // Alias just in case, but we use 'query' imported above
+
+export async function addCollaborator(campaignId: string, stationId: string, personId: string | null, role: string, citizenData?: any) {
+    let targetPersonId = personId;
+
+    // 1. Strict CI-based Lookup / Creation
+    if (citizenData && citizenData.documentId) {
+        // Cleaning documentId just in case
+        const docId = citizenData.documentId.trim();
+
+        // Check if person exists by document_id in THIS campaign
+        const existingRes = await query(
+            `SELECT p.id, g.first_name, g.last_name
+             FROM persons p 
+             JOIN global_citizens g ON p.citizen_id = g.id
+             WHERE p.campaign_id=$1 AND g.document_id=$2`,
+            [campaignId, docId]
+        );
+
+        if (existingRes.rows.length > 0) {
+            const existing = existingRes.rows[0];
+            targetPersonId = existing.id;
+
+            // CHECK: Is data incomplete? (Null, empty, or placeholder "NN")
+            const currentFirst = existing.first_name || "";
+            const currentLast = existing.last_name || "";
+            const isIncomplete = !currentFirst.trim() || !currentLast.trim() || currentFirst === 'NN' || currentLast === 'NN';
+
+            if (isIncomplete && citizenData.firstName && citizenData.lastName) {
+                // UPDATE names in global_citizens (via subquery or direct update if we had ID, here we need citizen_id from the join)
+                // Let's get citizen_id first or do a join update. 
+                // Simpler: Update global_citizens linked to this person.
+                await query(
+                    `UPDATE global_citizens 
+                     SET first_name = $1, last_name = $2
+                     FROM persons p
+                     WHERE global_citizens.id = p.citizen_id 
+                       AND p.id = $3`,
+                    [citizenData.firstName.toUpperCase(), citizenData.lastName.toUpperCase(), targetPersonId]
+                );
+            }
+        } else {
+            // Create Person (Linked to Global Citizen)
+            const newPerson = await personCreate(campaignId, {
+                documentId: docId,
+                firstName: citizenData.firstName?.toUpperCase(),
+                lastName: citizenData.lastName?.toUpperCase(),
+                // Defaults
+                phoneNumber: null, 
+                partyAffiliation: 'ANR'
+            });
+            targetPersonId = newPerson.id;
+        }
+    }
+
+    if (!targetPersonId) {
+        throw new Error("Document ID is required to add a collaborator.");
+    }
+
     const res = await query(
         `INSERT INTO station_collaborators (station_id, person_id, role)
          VALUES ($1, $2, $3)
          ON CONFLICT (station_id, person_id) DO UPDATE SET role = EXCLUDED.role
          RETURNING *`,
-        [stationId, personId, role]
+        [stationId, targetPersonId, role]
     );
     return res.rows[0];
 }
@@ -149,60 +240,70 @@ export async function getStationDashboard(campaignId: string, stationId: string,
 
     // 1. Collaborators
     const collaborators = await query(
-        `SELECT sc.*, p.first_name, p.last_name, p.document_id
+        `SELECT sc.*, g.first_name, g.last_name, g.document_id
          FROM station_collaborators sc
          JOIN persons p ON sc.person_id = p.id
+         JOIN global_citizens g ON p.citizen_id = g.id
          WHERE sc.station_id=$1`,
         [stationId]
     );
 
-    // 2. Stats (Simple aggregation)
+    // 2. Stats (Fixed: Uses station_checkins for visits)
     const statsQuery = await query(
         `SELECT 
-            COUNT(*) FILTER (WHERE assigned_station_id=$1) as total_assigned,
-            COUNT(*) FILTER (WHERE assigned_station_id=$1 AND campaign_status='VISITED_PC') as total_visited_pc,
-            COUNT(*) FILTER (WHERE assigned_station_id=$1 AND (status_day_d='VOTED' OR has_voted=true)) as total_voted
+            (SELECT COUNT(*) FROM persons WHERE assigned_station_id=$1 AND campaign_id=$2) as total_assigned,
+            (SELECT COUNT(DISTINCT person_id) FROM station_checkins WHERE station_id=$1 AND campaign_id=$2 AND checkin_at::date = CURRENT_DATE) as total_visited_pc,
+            (SELECT COUNT(*) FROM persons WHERE assigned_station_id=$1 AND campaign_id=$2 AND (status_day_d='VOTED' OR has_voted=true)) as total_voted
          FROM persons
          WHERE campaign_id=$2`, 
         [stationId, campaignId]
     );
-    // Note: The stats query implies we only count assigned people. If check-ins include people NOT assigned, we'd need a different query.
-    // For now, focusing on the "Master Grid" of assigned people as requested.
 
     // 3. Voters (Paginated & Searched)
-    let whereClause = `campaign_id=$1 AND assigned_station_id=$2`;
+    let whereClause = `p.campaign_id=$1 AND p.assigned_station_id=$2`;
     const params: any[] = [campaignId, stationId];
 
     if (search) {
-        whereClause += ` AND (first_name ILIKE $3 OR last_name ILIKE $3 OR document_id ILIKE $3)`;
+        whereClause += ` AND (g.first_name ILIKE $3 OR g.last_name ILIKE $3 OR g.document_id ILIKE $3)`;
         params.push(`%${search}%`);
     }
 
     const votersQuery = await query(
-        `SELECT id, first_name, last_name, document_id, voting_table_number, 
-                campaign_status, status_day_d, requests, notes,
-                has_financial_needs, financial_amount, financial_needs_fulfilled,
-                current_vote_intent
-         FROM persons
+        `SELECT p.id, g.first_name, g.last_name, g.document_id, g.voting_table_number, 
+                p.campaign_status, p.status_day_d, p.requests, p.notes,
+                p.has_financial_needs, p.financial_amount, p.financial_needs_fulfilled,
+                p.current_vote_intent
+         FROM persons p
+         JOIN global_citizens g ON p.citizen_id = g.id
          WHERE ${whereClause}
-         ORDER BY last_name, first_name
+         ORDER BY g.last_name, g.first_name
          LIMIT ${limit} OFFSET ${offset}`,
         params
     );
     
     // Total count for pagination
     const countQuery = await query(
-        `SELECT COUNT(*) as val FROM persons WHERE ${whereClause}`,
+        `SELECT COUNT(*) as val 
+         FROM persons p 
+         JOIN global_citizens g ON p.citizen_id = g.id
+         WHERE ${whereClause}`,
         params
     );
 
     // Process Flags & Details efficiently
     const processedVoters = votersQuery.rows.map(v => {
         const reqs = v.requests || [];
+        
+        // Parse LOGISTICS
         const logReq = reqs.find((r:any) => r.type === 'LOGISTICS');
         const subtypes = logReq?.subtypes || [];
         const logResponsible = logReq?.responsible || null;
         const logStatus = logReq?.status || 'PENDING';
+
+        // Parse FINANCIAL (Search in requests as requested)
+        const finReq = reqs.find((r:any) => r.type === 'FINANCIAL');
+        const finAmount = finReq?.amount || v.financial_amount || 0;
+        const finFulfilled = finReq?.status === 'COMPLETED' || v.financial_needs_fulfilled;
 
         return {
             ...v,
@@ -211,25 +312,46 @@ export async function getStationDashboard(campaignId: string, stationId: string,
                 subtypes: subtypes,
                 responsible: logResponsible,
                 status: logStatus,
-                // flags for quick icons
                 has_fuel: subtypes.includes('FUEL'),
                 has_transport: subtypes.includes('TRANSPORT'),
                 has_snack: subtypes.includes('SNACK'),
                 has_accompaniment: subtypes.includes('ACCOMPANIMENT'),
             },
             financial: {
-                has_needs: v.has_financial_needs,
-                amount: v.financial_amount,
-                fulfilled: v.financial_needs_fulfilled
+                has_needs: !!finReq || v.has_financial_needs,
+                amount: finAmount,
+                fulfilled: finFulfilled,
+                details: finReq
             }
         };
     });
+    
+    // 4. Check-in Status Optimization
+    const personIds = processedVoters.map((p: any) => p.id);
+    let checkinsMap: Record<string, boolean> = {};
+    
+    if (personIds.length > 0) {
+        const checkinsRes = await query(
+            `SELECT person_id FROM station_checkins 
+             WHERE station_id=$1 AND checkin_at::date = CURRENT_DATE 
+             AND person_id = ANY($2::uuid[])`,
+            [stationId, personIds]
+        );
+        checkinsRes.rows.forEach(row => {
+            checkinsMap[row.person_id] = true;
+        });
+    }
+
+    const finalVoters = processedVoters.map((p: any) => ({
+        ...p,
+        visited_pc: !!checkinsMap[p.id]
+    }));
 
     return {
         collaborators: collaborators.rows,
         stats: statsQuery.rows[0],
         voters: {
-            data: processedVoters,
+            data: finalVoters,
             total: parseInt(countQuery.rows[0].val),
             page,
             limit

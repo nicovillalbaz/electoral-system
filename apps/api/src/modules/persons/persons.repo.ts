@@ -1,6 +1,7 @@
 import { query, pool } from "../../db/query";
 import { logEvent } from "../events/events.repo";
 import { taskCreate } from "../tasks/tasks.repo";
+import { createNotification } from "../notifications/notifications.repo";
 // LISTAR TODO EL PADRÓN (Paginado + JOIN con Datos Reales)
 // apps/api/src/modules/persons/persons.repo.ts
 
@@ -322,7 +323,7 @@ export async function personUpdate(
     // 1. Obtener datos actuales (Snapshot para el historial)
     const currentRes = await client.query(
       `SELECT p.current_vote_intent, p.notes, p.campaign_status, 
-                p.needs_transport, p.transport_status, p.exact_address, p.whatsapp_number, p.assigned_station_id,
+                p.needs_transport, p.transport_status, p.exact_address, p.whatsapp_number, p.assigned_station_id, p.assigned_user_id,
                 g.phone_number, g.address, g.location_place, g.first_name, g.last_name
          FROM persons p
          JOIN global_citizens g ON p.citizen_id = g.id
@@ -371,7 +372,8 @@ export async function personUpdate(
       patch.requests !== undefined ||
       patch.hasFinancialNeeds !== undefined ||
       patch.financialNeedsFulfilled !== undefined ||
-      patch.financialAmount !== undefined
+      patch.financialAmount !== undefined ||
+      patch.assignedUserId !== undefined
     ) {
       await client.query(
         `UPDATE persons 
@@ -389,9 +391,10 @@ export async function personUpdate(
              has_financial_needs = COALESCE($10, has_financial_needs),
              financial_needs_fulfilled = COALESCE($11, financial_needs_fulfilled),
              financial_amount = COALESCE($12, financial_amount),
+             assigned_user_id = COALESCE($13, assigned_user_id),
 
              updated_at = NOW()
-         WHERE id = $13 AND campaign_id = $14`,
+         WHERE id = $14 AND campaign_id = $15`,
         [
           sanitize(patch.currentVoteIntent), 
           patch.notes,
@@ -406,6 +409,7 @@ export async function personUpdate(
           patch.hasFinancialNeeds,
           patch.financialNeedsFulfilled,
           patch.financialAmount,
+          sanitize(patch.assignedUserId),
 
           personId,
           campaignId,
@@ -427,6 +431,18 @@ export async function personUpdate(
     if (patch.exactAddress && patch.exactAddress !== before.exact_address) changes.push(`Dir. Exacta actualizada`);
     if (patch.whatsappNumber && patch.whatsappNumber !== before.whatsapp_number) changes.push(`WhatsApp actualizado`);
     if (patch.assignedStationId && patch.assignedStationId !== before.assigned_station_id) changes.push(`Puesto asignado`);
+    if (patch.assignedUserId && patch.assignedUserId !== before.assigned_user_id) {
+        changes.push(`Responsable asignado`);
+        // Notify
+        if (patch.assignedUserId) {
+            await createNotification({
+                userId: patch.assignedUserId,
+                message: `Te han asignado a ${before.first_name} ${before.last_name} como responsable.`,
+                type: 'VOTER_ASSIGNED',
+                link: `/dashboard/persons?q=${before.document_id}`
+            });
+        }
+    }
 
     if (newVote !== undefined && newVote !== before.current_vote_intent) {
       changes.push(`Intención: ${newVote || "Indeciso"}`);
@@ -459,33 +475,39 @@ export async function personUpdate(
     }
     if (patch.requests && JSON.stringify(patch.requests) !== JSON.stringify(before.requests || [])) {
          const oldReqs = (before.requests || []) as any[];
-         const newReqs = patch.requests as any[];
+         const newReqs = patch.requests as any[]; // Array of { type, detail, assignedUserId, ... } or strings
+
+         // Helper to unify format
+         const normalize = (r: any) => typeof r === 'string' ? { type: 'LOGISTICS', detail: r } : r;
          
-         const newLog = newReqs.find((r:any) => r.type === 'LOGISTICS');
-         const oldLog = oldReqs.find((r:any) => r.type === 'LOGISTICS');
+         // Find strictly new requests (not present in old)
+         // We use JSON stringify for simple object comparison
+         const addedReqs = newReqs.filter(nr => 
+            !oldReqs.some(or => JSON.stringify(normalize(or)) === JSON.stringify(normalize(nr)))
+         );
 
-         if (newLog && !oldLog) {
-             changes.push(`Solicitó: ${newLog.subtypes?.join(', ')}`);
+         for (const req of addedReqs) {
+             const n = normalize(req);
+             changes.push(`Solicitó (${n.type}): ${n.detail}`);
              
-             // AUTOMATIC TASK CREATION (LOGISTICS)
-             if (actorUserId) {
-                const subtypes = newLog.subtypes?.join(', ') || 'General';
-                const resp = newLog.responsible ? ` (Resp: ${newLog.responsible})` : '';
-                await taskCreate(campaignId, actorUserId, {
-                    title: `Logística (${before.first_name} ${before.last_name}): ${subtypes}`,
-                    description: `Solicitud Automática desde Día D.${resp}\nNotas: ${patch.notes || before.notes || ''}`,
-                    priority: 'URGENT',
-                    taskType: 'LOGISTICS',
-                    relatedPersonId: personId
-                });
+             // AUTOMATIC TASK CREATION
+             if (n.assignedUserId && actorUserId) {
+                 await taskCreate(campaignId, actorUserId, {
+                     title: `${n.type}: ${n.detail} (${before.first_name} ${before.last_name})`,
+                     description: `Solicitud asignada desde asignación directa.\n\nDetalle: ${n.detail}\nCategoría: ${n.type}\n\nDatos de Contacto:\nCel: ${before.phone_number || 'N/A'}\nDir: ${before.address || 'N/A'}\nRef: ${before.exact_address || ''}`,
+                     priority: 'URGENT',
+                     taskType: 'LOGISTICS',
+                     dueDate: new Date(), // Today
+                     assignedUserId: n.assignedUserId, // <--- THE KEY CHANGE
+                     relatedPersonId: personId
+                 });
+                 // Notification? taskCreate might handle it, or we add one? 
+                 // taskCreate usually notifies assignee.
              }
-
-         } else if (newLog && oldLog && JSON.stringify(newLog.subtypes) !== JSON.stringify(oldLog.subtypes)) {
-             changes.push(`Cambió items: ${newLog.subtypes?.join(', ')}`);
-         } else if (!newLog && oldLog) {
-             changes.push("Canceló solicitud logística");
-         } else if (JSON.stringify(newReqs) !== JSON.stringify(oldReqs)) {
-             changes.push("Actualizó pedidos");
+         }
+         
+         if (addedReqs.length === 0 && newReqs.length < oldReqs.length) {
+             changes.push("Se eliminaron pedidos/solicitudes");
          }
     }
 
@@ -556,4 +578,222 @@ export async function personsGetUniqueAddresses(campaignId: string) {
 
   // Devolvemos la lista única limpia
   return res.rows.map((r) => r.clean_zone).filter((z) => z !== "OTRAS ZONAS");
+}
+
+// MASIVE UPDATE
+export async function personsBulkUpdate(
+  campaignId: string,
+  filterParams: any,
+  updates: any,
+  actorUserId: string
+) {
+  // Validate allowed keys in updates object
+  const allowedKeys = [
+      "campaign_status", "current_vote_intent", "assigned_user_id", "assigned_station_id", 
+      "transport_status", "needs_transport", "has_voted",
+      "add_tag", "add_note", "add_request", "financial_amount"
+  ];
+  
+  const updateKeys = Object.keys(updates);
+  if (updateKeys.some(k => !allowedKeys.includes(k))) {
+      throw new Error("Invalid field in bulk update: " + updateKeys.find(k => !allowedKeys.includes(k)));
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    
+    // 1. Build Conditions (Duplicated from personsList)
+    const conditions = [`p.campaign_id = $1`];
+    const queryParams: any[] = [campaignId];
+    let paramIndex = 2; // $1 is campaignId
+
+    if (filterParams.q) {
+      conditions.push(`(g.document_id ILIKE $${paramIndex} OR g.first_name ILIKE $${paramIndex} OR g.last_name ILIKE $${paramIndex})`);
+      queryParams.push(`%${filterParams.q}%`);
+      paramIndex++;
+    }
+
+    if (filterParams.address) {
+       if (filterParams.address === "B° CRISTÓBAL COLÓN") {
+          conditions.push(`g.address ILIKE '%COLON%'`);
+       } else if (filterParams.address === "B° CENTRO") {
+          conditions.push(`(g.address ILIKE '%CENTRO%' OR g.address ILIKE '%CASCO%')`);
+       } else if (filterParams.address === "B° YBYHANGUY 1") {
+          conditions.push(`(g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%') AND (g.address ILIKE '%1%' OR g.address ILIKE '%I%')`);
+       } else if (filterParams.address === "B° YBYHANGUY 2") {
+          conditions.push(`(g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%') AND (g.address ILIKE '%2%' OR g.address ILIKE '%II%')`);
+       } else if (filterParams.address === "B° PIRAYU'I") {
+          conditions.push(`g.address ILIKE '%PIRAYU%'`);
+       } else if (filterParams.address === "B° HERIBERTA MATIAUDA") {
+          conditions.push(`g.address ILIKE '%MATIAUDA%'`);
+       } else if (filterParams.address === "B° CIERVO CUA") {
+          conditions.push(`g.address ILIKE '%CIERVO%'`);
+       } else if (filterParams.address === "B° SANTA LIBRADA") {
+          conditions.push(`g.address ILIKE '%LIBRADA%'`);
+       } else if (filterParams.address === "B° SANTA ROSALINA") {
+          conditions.push(`(g.address ILIKE '%ROSALINA%' OR g.address ILIKE '%ROSA DE LIMA%')`);
+       } else if (filterParams.address === "B° PUERTA DEL LAGO") {
+          conditions.push(`(g.address ILIKE '%PUERTA%' OR g.address ILIKE '%LAGO%')`);
+       } else {
+          conditions.push(`g.address = $${paramIndex}`);
+          queryParams.push(filterParams.address);
+          paramIndex++;
+       }
+    }
+
+    if (filterParams.party && filterParams.party !== "TODOS") {
+      conditions.push(`g.party_affiliation = $${paramIndex}`);
+      queryParams.push(filterParams.party);
+      paramIndex++;
+    }
+
+    if (filterParams.voteIntent && filterParams.voteIntent !== "ALL") {
+      conditions.push(`p.current_vote_intent = $${paramIndex}`);
+      queryParams.push(filterParams.voteIntent);
+      paramIndex++;
+    }
+
+    if (filterParams.votedStatus === "VOTED") conditions.push(`p.has_voted = true`);
+    if (filterParams.votedStatus === "PENDING") conditions.push(`p.has_voted = false`);
+
+    if (filterParams.campaignStatus && filterParams.campaignStatus !== "ALL") {
+      conditions.push(`p.campaign_status = $${paramIndex}`);
+      queryParams.push(filterParams.campaignStatus);
+      paramIndex++;
+    }
+
+    if (filterParams.tagId) {
+      conditions.push(`EXISTS (SELECT 1 FROM person_tags pt WHERE pt.person_id = p.id AND pt.tag_id = $${paramIndex})`);
+      queryParams.push(filterParams.tagId);
+      paramIndex++;
+    }
+
+    if (filterParams.hasRequests === 'true') {
+        conditions.push(`jsonb_array_length(p.requests) > 0`);
+    }
+
+    if (filterParams.hasFinancialNeeds && filterParams.hasFinancialNeeds !== 'ALL') {
+        const val = filterParams.hasFinancialNeeds === 'true';
+        conditions.push(`p.has_financial_needs = $${paramIndex}`);
+        queryParams.push(val);
+        paramIndex++;
+    }
+
+    if (filterParams.financialNeedsFulfilled && filterParams.financialNeedsFulfilled !== 'ALL') {
+        const val = filterParams.financialNeedsFulfilled === 'true';
+        conditions.push(`p.financial_needs_fulfilled = $${paramIndex}`);
+        queryParams.push(val);
+        paramIndex++;
+    }
+
+    // 2. Perform Updates Sequentially for maximal flexibility
+    // We iterate over keys and run specific queries. This is less efficient than one big UPDATE but supports complex logic (INSERT/APPEND).
+    // Given usage frequency, this is acceptable. Or we can combine standard updates.
+
+    // A. Standard Updates (One Query)
+    const standardFields = ["campaign_status", "current_vote_intent", "assigned_user_id", "assigned_station_id", "transport_status", "needs_transport", "has_voted"];
+    const standardUpdates: any = {};
+    updateKeys.forEach(k => {
+        if (standardFields.includes(k)) standardUpdates[k] = updates[k];
+    });
+
+    if (Object.keys(standardUpdates).length > 0) {
+        const setClauses: string[] = [];
+        Object.entries(standardUpdates).forEach(([k, v]) => {
+            setClauses.push(`${k} = $${paramIndex}`);
+            queryParams.push(v === "" ? null : v);
+            paramIndex++;
+        });
+        
+        // FINANCIAL SPECIAL CASE (If standard-ish)
+        // ... handled separately below for "financial_amount" key logic usually, but let's see.
+
+        const sql = `
+           UPDATE persons p
+           SET ${setClauses.join(", ")}, updated_at = NOW()
+           FROM global_citizens g
+           WHERE p.citizen_id = g.id
+             AND p.campaign_id = $1 
+             AND ${conditions.join(" AND ")}
+        `;
+        await client.query(sql, queryParams);
+    }
+
+    // B. Complex Updates (One by One)
+    // We need to re-use conditions/params for subsequent queries, so let's reset or just append?
+    // Actually, reusing the BASE conditions parameters is tricky if we keep pushing to queryParams.
+    // Better strategy: Use a dedicated function/query builder for the WHERE clause to avoid index hell.
+    // Hack: Just re-build the WHERE clause parameters for each complex query?
+    // Or just use the already built queryParams for the WHERE part!
+    
+    // Re-building base params for complex queries:
+    const baseParams = queryParams.slice(0, paramIndex - Object.keys(standardUpdates).length); // Remove the standard update values
+    const baseCondition = conditions.join(" AND ");
+
+    // ADD TAG
+    if (updates.add_tag) {
+         const pIdx = baseParams.length + 1;
+         const sql = `
+           INSERT INTO person_tags (person_id, tag_id)
+           SELECT p.id, $${pIdx}
+           FROM persons p
+           JOIN global_citizens g ON p.citizen_id = g.id
+           WHERE p.campaign_id = $1 AND ${baseCondition}
+           ON CONFLICT DO NOTHING
+        `;
+        await client.query(sql, [...baseParams, updates.add_tag]);
+    }
+
+    // ADD NOTE
+    if (updates.add_note) {
+         const pIdx = baseParams.length + 1;
+         const sql = `
+           UPDATE persons p
+           SET notes = COALESCE(notes, '') || E'\n' || $${pIdx}, updated_at = NOW()
+           FROM global_citizens g
+           WHERE p.citizen_id = g.id AND p.campaign_id = $1 AND ${baseCondition}
+        `;
+        await client.query(sql, [...baseParams, updates.add_note]);
+    }
+
+    // ADD REQUEST
+    if (updates.add_request) {
+         const pIdx = baseParams.length + 1;
+         const sql = `
+           UPDATE persons p
+           SET requests = COALESCE(requests, '[]'::jsonb) || $${pIdx}::jsonb, updated_at = NOW()
+           FROM global_citizens g
+           WHERE p.citizen_id = g.id AND p.campaign_id = $1 AND ${baseCondition}
+        `;
+        // Ensure request is object or array? Implementation plan said object.
+        await client.query(sql, [...baseParams, JSON.stringify(updates.add_request)]);
+    }
+
+    // FINANCIAL AMOUNT
+    if (updates.financial_amount !== undefined) {
+         const pIdx = baseParams.length + 1;
+         const sql = `
+           UPDATE persons p
+           SET financial_amount = $${pIdx}, 
+               has_financial_needs = ($${pIdx} > 0), 
+               updated_at = NOW()
+           FROM global_citizens g
+           WHERE p.citizen_id = g.id AND p.campaign_id = $1 AND ${baseCondition}
+        `;
+        await client.query(sql, [...baseParams, updates.financial_amount]);
+    }
+
+    // Count is hard to get exactly if multiple updates... estimate from first?
+    // Let's return just success.
+
+    await client.query("COMMIT");
+    return { success: true };
+    
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 }

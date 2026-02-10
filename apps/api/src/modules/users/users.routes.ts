@@ -31,6 +31,7 @@ export async function usersRoutes(app: FastifyInstance) {
       full_name: z.string().optional(),
       name: z.string().optional(),
       role: z.enum(["ADMIN","COORDINATOR","STATION_MANAGER","OPERATOR","VOLUNTEER","VIEWER"]).default("OPERATOR"),
+      operationalRole: z.enum(["JEFE_CAMPAÑA", "COORDINADOR", "PUNTERO", "CHOFER", "MESA_TESTIGO", "OTRO"]).optional(),
     }).parse(req.body);
 
     // Lógica de "Rescate": Usamos el que haya venido, o un valor por defecto
@@ -44,6 +45,7 @@ export async function usersRoutes(app: FastifyInstance) {
       passwordHash,
       fullName: finalName, // Usamos el nombre ya procesado
       role: body.role,
+      operationalRole: body.operationalRole,
     });
   });
 
@@ -55,15 +57,23 @@ export async function usersRoutes(app: FastifyInstance) {
       const params = z.object({ id: z.string().uuid() }).parse(req.params);
       
       const body = z.object({
-        isActive: z.boolean().optional(), // True = Activo, False = Bloqueado
+        isActive: z.boolean().optional(),
         role: z.enum(["ADMIN","COORDINATOR","STATION_MANAGER","OPERATOR","VOLUNTEER","VIEWER"]).optional(),
         fullName: z.string().min(2).optional(),
+        operationalRole: z.enum(["JEFE_CAMPAÑA", "COORDINADOR", "PUNTERO", "CHOFER", "MESA_TESTIGO", "OTRO"]).optional(),
+        password: z.string().min(6).optional(),
+        assignedStationId: z.string().uuid().optional().nullable(), // Allow null to unassign
       }).parse(req.body);
+
+      const passwordHash = body.password ? await hashPassword(body.password) : undefined;
 
       const updated = await userUpdate(req.user.campaignId, params.id, {
         isActive: body.isActive,
         role: body.role,
-        fullName: body.fullName
+        fullName: body.fullName,
+        operationalRole: body.operationalRole,
+        passwordHash,
+        assignedStationId: body.assignedStationId === null ? undefined : body.assignedStationId // Handle nullable
       });
 
       if (!updated) throw notFound("User not found");

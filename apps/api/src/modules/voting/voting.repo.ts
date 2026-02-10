@@ -29,15 +29,16 @@ export async function markVoted(input: {
     ]
   );
 
-  // 2) reflejamos estado actual en persons
+  // 2) reflejamos estado actual en persons (Allows Parent to mark Child's person)
   const res = await query(
     `UPDATE persons
      SET has_voted=true, updated_at=now()
-     WHERE campaign_id=$1 AND id=$2
+     WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) 
+       AND id=$2
      RETURNING *`,
     [input.campaignId, input.personId]
   );
-
+  
   return res.rows[0];
 }
 
@@ -49,7 +50,8 @@ export async function listMissingByTerritory(input: {
   limit?: number;
 }) {
   const params: any[] = [input.campaignId];
-  let where = `WHERE campaign_id=$1 AND has_voted=false`;
+  // Hierarchy Support
+  let where = `WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) AND has_voted=false`;
 
   if (input.cityId) { params.push(input.cityId); where += ` AND city_id=$${params.length}`; }
   if (input.zoneId) { params.push(input.zoneId); where += ` AND zone_id=$${params.length}`; }
@@ -76,7 +78,7 @@ export async function listMissingByTerritory(input: {
 export async function createTransportTask(
     campaignId: string, 
     userId: string, 
-    data: { personId: string; pickupAddress: string; destinationAddress?: string; notes?: string }
+    data: { personId: string; pickupAddress: string; destinationAddress?: string; notes?: string; assignedUserId?: string }
 ) {
     // Primero obtenemos el nombre de la persona para el título
     const pRes = await query(`
@@ -91,9 +93,11 @@ export async function createTransportTask(
 
     const title = `Buscar a ${p.first_name} ${p.last_name} en ${data.pickupAddress}`;
 
-    // Update person status
+    // Update person status (Hierarchy Support)
     await query(
-        `UPDATE persons SET needs_transport = true, transport_status = 'PENDING' WHERE campaign_id = $1 AND id = $2`,
+        `UPDATE persons SET needs_transport = true, transport_status = 'PENDING' 
+         WHERE (campaign_id = $1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) 
+         AND id = $2`,
         [campaignId, data.personId]
     );
 
@@ -103,7 +107,8 @@ export async function createTransportTask(
         priority: 'URGENT',
         taskType: 'LOGISTICS',
         relatedPersonId: data.personId,
-        locationText: data.pickupAddress
+        locationText: data.pickupAddress,
+        assignedUserId: data.assignedUserId // <--- Pass to task
     });
 }
 
@@ -111,7 +116,7 @@ export async function createTransportTask(
 export async function createFinancialTask(
     campaignId: string,
     userId: string,
-    data: { personId: string; notes?: string }
+    data: { personId: string; notes?: string; assignedUserId?: string }
 ) {
      const pRes = await query(`
         SELECT g.first_name, g.last_name 
@@ -125,9 +130,11 @@ export async function createFinancialTask(
 
     const title = `Entrega de Viático/Logística a ${p.first_name} ${p.last_name}`;
 
-    // Update person status if needed (e.g. has_financial_needs = true)
+    // Update person status if needed (Hierarchy Support)
     await query(
-        `UPDATE persons SET has_financial_needs = true WHERE campaign_id = $1 AND id = $2`,
+        `UPDATE persons SET has_financial_needs = true 
+         WHERE (campaign_id = $1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) 
+         AND id = $2`,
         [campaignId, data.personId]
     );
 
@@ -136,7 +143,8 @@ export async function createFinancialTask(
         description: data.notes,
         priority: 'URGENT',
         taskType: 'FINANCIAL',
-        relatedPersonId: data.personId
+        relatedPersonId: data.personId,
+        assignedUserId: data.assignedUserId // <--- Pass to task
     });
 }
 
@@ -150,7 +158,8 @@ export async function getDayDGrid(campaignId: string, params: {
     const queryParams: any[] = [campaignId];
     let paramIndex = 2;
     
-    let where = `p.campaign_id = $1`;
+    // Hierarchy Support
+    let where = `(p.campaign_id = $1 OR p.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))`;
     
     if (q) {
         where += ` AND (g.document_id ILIKE $${paramIndex} OR g.first_name ILIKE $${paramIndex} OR g.last_name ILIKE $${paramIndex})`;
@@ -231,11 +240,12 @@ export async function updateDayDStatus(
     try {
         await client.query("BEGIN");
         
-        // Update person
+        // Update person (Hierarchy Support)
         const updateSql = `
             UPDATE persons 
             SET status_day_d = $1, updated_at = NOW()
-            WHERE id = $2 AND campaign_id = $3
+            WHERE id = $2 
+              AND (campaign_id = $3 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $3))
             RETURNING id, status_day_d
         `;
         const res = await client.query(updateSql, [newStatus, personId, campaignId]);

@@ -4,7 +4,7 @@ import * as path from 'path';
 
 async function run() {
     try {
-        const sqlPath = "d:\\Users\\Nicolás Antonio\\electoral-system\\station_dashboard.sql";
+        const sqlPath = "d:\\Users\\Nicolás Antonio\\electoral-system\\phase2_migration.sql";
         console.log(`Reading SQL from ${sqlPath}...`);
         const sql = fs.readFileSync(sqlPath, 'utf8');
         

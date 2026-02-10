@@ -10,14 +10,19 @@ export default function StationsPage() {
   const router = useRouter();
   const [stations, setStations] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
-  const [newStation, setNewStation] = useState({ name: '' });
+  const [newStation, setNewStation] = useState<{ id?: string, name: string, managerUserId?: string }>({ name: '' });
   const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState<any[]>([]); // <--- Users List
 
   // Drill down view
   const [selectedStation, setSelectedStation] = useState<any | null>(null);
   const [stationVoters, setStationVoters] = useState<any[]>([]);
 
-  useEffect(() => { loadStations(); }, []);
+  useEffect(() => { loadStations(); loadUsers(); }, []);
+
+  const loadUsers = async () => {
+      try { const res = await api.get('/users'); setUsers(res.data); } catch(e){}
+  };
 
   const loadStations = async () => {
     try {
@@ -31,12 +36,24 @@ export default function StationsPage() {
     }
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post('/stations', newStation);
-    setShowModal(false);
-    setNewStation({ name: '' });
-    loadStations();
+    try {
+        if (newStation.id) {
+            await api.patch(`/stations/${newStation.id}`, newStation);
+        } else {
+            await api.post('/stations', newStation);
+        }
+        setShowModal(false);
+        setNewStation({ name: '' });
+        loadStations();
+    } catch(e) { alert("Error al guardar"); }
+  };
+
+  const openEdit = (e: React.MouseEvent, station: any) => {
+      e.stopPropagation();
+      setNewStation({ id: station.id, name: station.name, managerUserId: station.manager_user_id });
+      setShowModal(true);
   };
 
   const openStationDetails = async (station: any) => {
@@ -98,8 +115,8 @@ export default function StationsPage() {
                         />
                     </div>
                     
-                    <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <MapPin size={16} className="text-zinc-500" />
+                    <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                         <button onClick={(e) => openEdit(e, s)} className="p-1 bg-zinc-800 rounded hover:bg-white hover:text-black text-white"><MapPin size={16} /></button>
                     </div>
                 </div>
               )
@@ -109,14 +126,23 @@ export default function StationsPage() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-zinc-900 border border-zinc-700 w-full max-w-sm rounded-xl p-6">
-            <h2 className="text-xl font-bold text-white mb-4">Nuevo Puesto</h2>
-            <form onSubmit={handleCreate}>
+            <h2 className="text-xl font-bold text-white mb-4">{newStation.id ? "Editar Puesto" : "Nuevo Puesto"}</h2>
+            <form onSubmit={handleSave}>
               <label className="block text-xs font-bold text-zinc-400 mb-1">NOMBRE DEL LUGAR</label>
               <input 
                 className="w-full bg-black border border-zinc-700 rounded p-3 text-white mb-4 focus:border-white outline-none"
                 placeholder="Ej: Colegio Nacional..."
-                value={newStation.name} onChange={e => setNewStation({name: e.target.value})} required 
+                value={newStation.name} onChange={e => setNewStation({...newStation, name: e.target.value})} required 
               />
+              <label className="block text-xs font-bold text-zinc-400 mb-1">JEFE DE PC (RESPONSABLE)</label>
+              <select 
+                className="w-full bg-black border border-zinc-700 rounded p-3 text-white mb-4 focus:border-white outline-none"
+                value={newStation.managerUserId || ""} onChange={e => setNewStation({...newStation, managerUserId: e.target.value})}
+              >
+                  <option value="">-- Sin asignar --</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+              </select>
+
               <button type="submit" className="w-full bg-white text-black py-3 rounded font-black hover:bg-zinc-200">GUARDAR</button>
               <button type="button" onClick={() => setShowModal(false)} className="w-full mt-2 py-2 text-zinc-500 font-bold text-sm">CANCELAR</button>
             </form>

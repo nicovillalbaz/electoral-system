@@ -23,7 +23,7 @@ export async function tasksList(
   } = params;
   const offset = (page - 1) * limit;
 
-  const conditions = [`t.campaign_id = $1`];
+  const conditions = [`(t.campaign_id = $1 OR t.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))`];
   const queryParams: any[] = [campaignId];
   let paramIndex = 2;
 
@@ -196,7 +196,7 @@ export async function taskUpdate(campaignId: string, taskId: string, data: any) 
   const sql = `
     UPDATE tasks
     SET ${updates.join(", ")}
-    WHERE campaign_id = $1 AND id = $2
+    WHERE (campaign_id = $1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) AND id = $2
     RETURNING *
   `;
 
@@ -206,7 +206,7 @@ export async function taskUpdate(campaignId: string, taskId: string, data: any) 
 
 export async function taskDelete(campaignId: string, taskId: string) {
   // SOFT DELETE: Mark as deleted instead of removing
-  const sql = `UPDATE tasks SET deleted_at = NOW() WHERE campaign_id = $1 AND id = $2 RETURNING id`;
+  const sql = `UPDATE tasks SET deleted_at = NOW() WHERE (campaign_id = $1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) AND id = $2 RETURNING id`;
   const res = await query(sql, [campaignId, taskId]);
   return (res.rowCount ?? 0) > 0;
 }
@@ -224,7 +224,7 @@ export async function taskCompleteWithExpense(
     const completeSql = `
       UPDATE tasks 
       SET completed_at = NOW(), updated_at = NOW()
-      WHERE id = $1 AND campaign_id = $2
+      WHERE id = $1 AND (campaign_id = $2 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $2))
       RETURNING id
     `;
     const taskRes = await client.query(completeSql, [taskId, campaignId]);

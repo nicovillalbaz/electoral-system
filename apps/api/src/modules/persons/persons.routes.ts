@@ -8,6 +8,7 @@ import {
   personCreate,
   personUpdate,
   personsGetUniqueAddresses,
+  personsBulkUpdate,
 } from "./persons.repo";
 import {
   VOTE_INTENT_OPTIONS,
@@ -20,6 +21,28 @@ export async function personsRoutes(app: FastifyInstance) {
   app.get("/addresses", { preHandler: [app.requireAuth] }, async (req: any) => {
     const campaignId = req.user.campaignId;
     return personsGetUniqueAddresses(campaignId);
+  });
+  
+  // --- NEW: BULK UPDATE ---
+  app.patch("/bulk-update", { preHandler: [app.requireAuth, requireRole(["ADMIN", "COORDINATOR"])] }, async (req: any, reply: any) => {
+      try {
+          const body = z.object({
+              filterCriteria: z.any(), // Flexible, re-validating inside repo or here if needed.
+              updates: z.record(z.string(), z.any()), // New: updates object
+          }).parse(req.body);
+
+          const campaignId = req.user.campaignId;
+          const actorUserId = req.user.userId;
+
+          const start = Date.now();
+          const result = await personsBulkUpdate(campaignId, body.filterCriteria, body.updates, actorUserId);
+          console.log(`[BULK] Updated in ${Date.now() - start}ms`);
+
+          return result;
+      } catch (error: any) {
+          console.error(error);
+          reply.code(500).send({ error: error.message });
+      }
   });
   app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
     // 1. Validamos todos los filtros entrantes

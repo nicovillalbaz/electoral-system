@@ -27,7 +27,6 @@ export default function StationDashboardPage() {
     
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState("");
-    const [isAddingCollab, setIsAddingCollab] = useState(false);
     
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -49,22 +48,6 @@ export default function StationDashboardPage() {
     }, [stationId, page, search]);
 
     // --- ACTIONS ---
-    const handleAddCollaborator = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const form = e.target as HTMLFormElement;
-        const personId = (form.elements.namedItem('personId') as HTMLInputElement).value;
-        const role = (form.elements.namedItem('role') as HTMLSelectElement).value;
-        
-        try {
-            await safeApi.post(`/stations/${stationId}/collaborators`, { personId, role });
-            fetchData(); 
-            setIsAddingCollab(false);
-            form.reset();
-        } catch (e) {
-            alert("Error adding collaborator");
-        }
-    };
-
     const handleRemoveCollaborator = async (personId: string) => {
         if (!confirm("Remove staff?")) return;
         try {
@@ -99,27 +82,7 @@ export default function StationDashboardPage() {
                         <h2 className="font-bold text-lg flex items-center gap-2">
                             <Users size={18} /> Equipo PC
                         </h2>
-                        <button 
-                            onClick={() => setIsAddingCollab(!isAddingCollab)} 
-                            className="bg-zinc-800 hover:bg-zinc-700 p-1 rounded transition"
-                        >
-                            <Plus size={16} />
-                        </button>
                     </div>
-
-                    {isAddingCollab && (
-                        <form onSubmit={handleAddCollaborator} className="bg-zinc-950 p-3 rounded mb-4 border border-zinc-800 animate-in fade-in slide-in-from-top-2">
-                            <div className="text-xs font-bold text-zinc-500 mb-2">AGREGAR MIEMBRO</div>
-                            <input name="personId" placeholder="Person ID for now (Need Search)" className="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-xs mb-2" required />
-                            <select name="role" className="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-xs mb-2">
-                                <option value="JEFE">JEFE DE PC</option>
-                                <option value="logistica">LOGÍSTICA</option>
-                                <option value="SEGURIDAD">SEGURIDAD</option>
-                                <option value="CHOFER">CHOFER</option>
-                            </select>
-                            <button className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2 rounded">AGREGAR</button>
-                        </form>
-                    )}
 
                     <div className="space-y-2">
                         {data.collaborators.length === 0 && <div className="text-zinc-600 text-xs italic">Sin equipo asignado.</div>}
@@ -129,9 +92,7 @@ export default function StationDashboardPage() {
                                     <div className="font-bold text-sm text-zinc-200">{c.first_name} {c.last_name}</div>
                                     <div className="text-[10px] text-zinc-500 font-mono">{c.role}</div>
                                 </div>
-                                <button onClick={() => handleRemoveCollaborator(c.person_id)} className="text-zinc-600 hover:text-red-400">
-                                    <Trash2 size={14} />
-                                </button>
+                                {/* Read Only - No Remove */}
                             </div>
                         ))}
                     </div>

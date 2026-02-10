@@ -7,6 +7,7 @@ import {
 import api from "../../../../lib/api";
 import PersonModal from "../../persons/components/PersonModal"; 
 import FilterModal from "../../persons/components/FilterModal"; 
+import BulkUpdateModal from "../../persons/components/BulkUpdateModal"; 
 
 export default function SmartListPage() {
   const params = useParams();
@@ -25,6 +26,7 @@ export default function SmartListPage() {
   // Modales
   const [personToEdit, setPersonToEdit] = useState<any>(null);
   const [showFilters, setShowFilters] = useState(false); 
+  const [showBulkModal, setShowBulkModal] = useState(false); 
 
   // Cargar datos iniciales
   useEffect(() => {
@@ -148,6 +150,13 @@ export default function SmartListPage() {
             >
                 <Filter size={16}/> Criterios
             </button>
+            <button 
+                onClick={() => setShowBulkModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-yellow-500 hover:text-yellow-400 hover:border-yellow-600 transition-colors text-sm font-bold"
+                title="Edición Masiva"
+            >
+                <Edit size={16}/> Masivo
+            </button>
             <div className="h-8 w-[1px] bg-zinc-800 mx-2"></div>
              <button 
                 onClick={handleDeleteList}
@@ -252,6 +261,14 @@ export default function SmartListPage() {
         initialValues={listData?.filters}
         availableAddresses={availableAddresses}
         availableTags={availableTags}
+      />
+
+      {/* 3. Masivo */}
+      <BulkUpdateModal
+        isOpen={showBulkModal}
+        onClose={() => setShowBulkModal(false)}
+        onSuccess={() => { fetchListMembers(); alert("Actualización completada"); }}
+        activeFilters={listData?.filters}
       />
 
     </div>

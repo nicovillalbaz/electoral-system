@@ -5,6 +5,12 @@ import safeApi from "../../../../lib/api";
 import { addToQueue } from "../../../../lib/offline-queue";
 import { User, MapPin, CheckCircle, Smartphone, DollarSign, ClipboardList, Send, AlertTriangle, Truck, Save, X } from "lucide-react";
 
+interface AppUser {
+    id: string;
+    full_name: string;
+    role: string;
+}
+
 interface VoterControlPanelProps {
     voter: any;
     onClose: () => void;
@@ -36,6 +42,7 @@ export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterCon
     });
 
     const [stationOptions, setStationOptions] = useState<any[]>([]);
+    const [userOptions, setUserOptions] = useState<AppUser[]>([]);
 
     // Initialize Logistics from JSON
     useEffect(() => {
@@ -46,13 +53,14 @@ export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterCon
             ...prev,
             wants_logistics: !!logReq,
             logistics_types: logReq?.subtypes || [],
-            logistics_responsible: logReq?.responsible || ""
+            logistics_responsible: logReq?.assignedUserId || logReq?.responsible || "" // Load ID or legacy legacy name
         }));
     }, [voter]);
 
-    // Load PCs
+    // Load PCs & Users
     useEffect(() => {
         safeApi.get('/stations').then(res => setStationOptions(res.data)).catch(() => {});
+        safeApi.get('/users?limit=100').then(res => setUserOptions(res.data.data)).catch(() => {});
     }, []);
 
 
@@ -121,11 +129,13 @@ export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterCon
             if (logisticsChanged) {
                  // Rebuild requests array
                  const otherRequests = requests.filter((r: any) => r.type !== 'LOGISTICS');
+                 const selectedUser = userOptions.find(u => u.id === form.logistics_responsible); // Moved declaration
                  if (form.wants_logistics) {
-                    otherRequests.push({
+                     otherRequests.push({
                         type: 'LOGISTICS',
                         subtypes: form.logistics_types,
-                        responsible: form.logistics_responsible,
+                        responsible: selectedUser ? selectedUser.full_name : form.logistics_responsible, // Keep name for display
+                        assignedUserId: selectedUser ? selectedUser.id : undefined, // <--- Only send valid UUID
                         created_at: new Date().toISOString()
                     });
                  }
@@ -312,13 +322,18 @@ export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterCon
                                     </button>
                                 ))}
                             </div>
-                            <input 
-                                type="text"
-                                placeholder="Responsable / Encargado..."
-                                className="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-xs text-white placeholder:text-zinc-600 focus:border-blue-500 outline-none"
+                            <select 
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-xs text-white placeholder:text-zinc-600 focus:border-blue-500 outline-none appearance-none"
                                 value={form.logistics_responsible}
                                 onChange={(e) => handleChange('logistics_responsible', e.target.value)}
-                            />
+                            >
+                                <option value="">-- Asignar Responsable --</option>
+                                {userOptions.map(u => (
+                                    <option key={u.id} value={u.id}>
+                                        {u.full_name} ({u.role})
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     )}
                 </div>
