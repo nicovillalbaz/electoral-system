@@ -63,3 +63,16 @@ export async function listEvents(filters: ListEventsFilters) {
   const res = await query(sql, params);
   return res.rows;
 }
+
+export async function getEventById(campaignId: string, eventId: string) {
+  const res = await query(
+    `SELECT e.*, u.full_name as actor_name, s.name as station_name
+     FROM events e
+     LEFT JOIN users u ON e.actor_user_id = u.id
+     LEFT JOIN stations s ON e.station_id = s.id
+     WHERE e.campaign_id = $1 AND e.id = $2
+     LIMIT 1`,
+    [campaignId, eventId]
+  );
+  return res.rows[0] ?? null;
+}

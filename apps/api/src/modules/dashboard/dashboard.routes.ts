@@ -5,13 +5,19 @@ import {
   voteIntentBreakdown, 
   missingByZone, 
   stationActivity, 
-  performanceByZone 
+  performanceByZone, 
+  getTeamStats
 } from "./dashboard.repo";
 
 export async function dashboardRoutes(app: FastifyInstance) {
   // KPI Totales (Cajas de arriba)
   app.get("/totals", { preHandler: [app.requireAuth] }, async (req: any) => {
     return totals(req.user.campaignId);
+  });
+
+  // Segmentaci??n de equipo por rol operativo
+  app.get("/team-stats", { preHandler: [app.requireAuth] }, async (req: any) => {
+    return getTeamStats(req.user.campaignId);
   });
 
   // Torta de Intención de voto

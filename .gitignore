@@ -3,3 +3,5 @@ dist/
 .next/
 .env
 sql
+bckp.sql
+backups/

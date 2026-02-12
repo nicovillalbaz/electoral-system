@@ -1,5 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { requireRole } from "../../common/middleware/role";
+import { notFound } from "../../common/http/errors";
 import { listCreate, listsGetAll, listDelete, listUpdate, listGetMembers } from "./lists.repo";
 
 export async function listsRoutes(app: FastifyInstance) {
@@ -11,7 +13,7 @@ export async function listsRoutes(app: FastifyInstance) {
   });
 
   // POST CREAR
-  app.post("/", { preHandler: [app.requireAuth] }, async (req: any) => {
+  app.post("/", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR","OPERATOR"])] }, async (req: any) => {
     const body = z.object({
         name: z.string(),
         description: z.string().optional(),
@@ -25,13 +27,13 @@ export async function listsRoutes(app: FastifyInstance) {
   });
 
   // DELETE
-  app.delete("/:id", { preHandler: [app.requireAuth] }, async (req: any) => {
+  app.delete("/:id", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR","OPERATOR"])] }, async (req: any) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
       return listDelete(req.user.campaignId, id);
   });
 
   // PATCH
-  app.patch("/:id", { preHandler: [app.requireAuth] }, async (req: any) => {
+  app.patch("/:id", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR","OPERATOR"])] }, async (req: any) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
       const body = z.object({
           name: z.string().optional(),
@@ -66,7 +68,7 @@ export async function listsRoutes(app: FastifyInstance) {
 
     const result = await listGetMembers(req.user.campaignId, id, limit, offset, filterOverride);
     
-    if (!result) throw { statusCode: 404, message: "Lista no encontrada" };
+    if (!result) throw notFound("Lista no encontrada");
     
     return result;
   });

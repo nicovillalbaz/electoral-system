@@ -2,10 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, TrendingUp, Users, CheckCircle2 } from "lucide-react";
+import { Loader2, TrendingUp, Users, CheckCircle2, DollarSign } from "lucide-react";
 
 export default function AuditSelectorPage() {
   const [stations, setStations] = useState<any[]>([]);
+  const [summary, setSummary] = useState({
+    staff_count: 0,
+    checkins_today: 0,
+    financial_total_today: 0
+  });
+  const [statsByStation, setStatsByStation] = useState<Record<string, any>>({});
+  const [statsLoading, setStatsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -13,12 +20,57 @@ export default function AuditSelectorPage() {
     fetchStations();
   }, []);
 
+  const fetchStationStats = async (items: any[]) => {
+    if (!Array.isArray(items) || items.length === 0) {
+      setSummary({
+        staff_count: 0,
+        checkins_today: 0,
+        financial_total_today: 0
+      });
+      setStatsByStation({});
+      return;
+    }
+
+    setStatsLoading(true);
+    try {
+      const ids = items.map((pc) => pc.id).join(',');
+      const res = await fetch(`/api/stations/stats/batch?ids=${encodeURIComponent(ids)}`);
+      if (!res.ok) {
+        throw new Error('Failed to load station stats');
+      }
+      const data = await res.json();
+      const byId: Record<string, any> = data || {};
+      let staffTotal = 0;
+      let checkinsTotal = 0;
+      let financialTotal = 0;
+
+      items.forEach((pc) => {
+        const stats = byId[pc.id] || {};
+        staffTotal += Number(stats.staff || 0);
+        checkinsTotal += Number(stats.checkins || 0);
+        financialTotal += Number(stats.financial || 0);
+      });
+
+      setStatsByStation(byId);
+      setSummary({
+        staff_count: staffTotal,
+        checkins_today: checkinsTotal,
+        financial_total_today: financialTotal
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
   const fetchStations = async () => {
     try {
       const res = await fetch("/api/stations");
       if (res.ok) {
         const data = await res.json();
         setStations(data);
+        await fetchStationStats(data);
       }
     } catch (e) {
       console.error(e);
@@ -26,6 +78,8 @@ export default function AuditSelectorPage() {
       setLoading(false);
     }
   };
+
+  const formattedFinancial = summary.financial_total_today.toLocaleString("es-PY");
 
   if (loading) {
     return (
@@ -40,14 +94,39 @@ export default function AuditSelectorPage() {
       <div className="max-w-7xl mx-auto space-y-8">
         
         <header className="space-y-2">
+            <span className="text-xs uppercase tracking-[0.25em] text-zinc-500">Situation Room</span>
             <h1 className="text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
                 Torre de Control (Modo Auditoría)
             </h1>
             <p className="text-zinc-400">Selecciona un Puesto de Comando para auditar su operación y equipo.</p>
         </header>
 
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <SummaryCard
+              title="Equipo"
+              value={statsLoading ? "--" : `${summary.staff_count} Activos`}
+              icon={Users}
+              accent="text-blue-400"
+            />
+            <SummaryCard
+              title="Asistencia Hoy"
+              value={statsLoading ? "--" : `${summary.checkins_today} Votantes`}
+              icon={CheckCircle2}
+              accent="text-emerald-400"
+            />
+            <SummaryCard
+              title="Recursos"
+              value={statsLoading ? "--" : `Gs. ${formattedFinancial}`}
+              icon={DollarSign}
+              accent="text-amber-400"
+            />
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {stations.map((pc) => {
+                const stats = statsByStation[pc.id] || {};
+                const staffCount = statsLoading ? "--" : (stats.staff ?? "--");
+                const checkinsToday = statsLoading ? "--" : (stats.checkins ?? "--");
                 const assigned = pc.assigned_count || 0;
                 const voted = pc.voted_count || 0;
                 const progress = assigned > 0 ? (voted / assigned) * 100 : 0;
@@ -105,11 +184,11 @@ export default function AuditSelectorPage() {
                             <div className="pt-4 border-t border-zinc-800 flex gap-4 text-xs text-zinc-500">
                                 <div className="flex items-center gap-1">
                                    <Users className="h-3 w-3" />
-                                   Staff: --
+                                   Staff: {staffCount}
                                 </div>
                                 <div className="flex items-center gap-1">
                                    <CheckCircle2 className="h-3 w-3" />
-                                   Check-ins: --
+                                   Check-ins: {checkinsToday}
                                 </div>
                             </div>
                         </div>
@@ -118,6 +197,20 @@ export default function AuditSelectorPage() {
             })}
         </div>
 
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({ title, value, icon: Icon, accent }: any) {
+  return (
+    <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 flex items-center justify-between">
+      <div>
+        <p className="text-[10px] uppercase tracking-widest text-zinc-500">{title}</p>
+        <p className="text-2xl font-bold text-white mt-1">{value}</p>
+      </div>
+      <div className={`p-2 rounded-lg bg-black/30 ${accent}`}>
+        <Icon className="h-5 w-5" />
       </div>
     </div>
   );

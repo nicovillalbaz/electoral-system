@@ -8,7 +8,7 @@ interface FilterModalProps {
   onApply: (filters: any) => void; 
   availableAddresses: string[];
   availableTags: any[];
-  initialValues?: any; // <--- NUEVO: Para editar filtros existentes
+  initialValues?: any;
 }
 
 export default function FilterModal({ isOpen, onClose, onApply, availableAddresses, availableTags, initialValues }: FilterModalProps) {
@@ -19,11 +19,8 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
     voteIntent: initialValues?.voteIntent || "ALL",    
     tagId: initialValues?.tagId || "",            
     votedStatus: initialValues?.votedStatus || "ALL",
-    // Robustez: soporte camelCase o snake_case
     campaignStatus: initialValues?.campaignStatus || initialValues?.campaign_status || "ALL",
-    
-    // Nuevos
-    hasRequests: initialValues?.hasRequests || false, // Checkbox boolean
+    hasRequests: initialValues?.hasRequests || false,
     hasFinancialNeeds: initialValues?.hasFinancialNeeds || "ALL",
     financialNeedsFulfilled: initialValues?.financialNeedsFulfilled || "ALL"
   });
@@ -66,7 +63,7 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
             {/* CUERPO SCROLLEABLE */}
             <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
                 
-                {/* 1. UBICACIÓN (SELECT REAL) */}
+                {/* 1. UBICACIÓN */}
                 <div className="space-y-3">
                     <h3 className="text-xs font-black text-blue-500 uppercase tracking-wider flex items-center gap-2">
                         <MapPin size={14}/> Zona (Barrio/Dirección)
@@ -109,15 +106,16 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
                                 <option value="SURE">🟢 Voto Seguro</option>
                                 <option value="PROBABLE">🟡 Probable</option>
                                 <option value="UNDECIDED">⚪ Indeciso</option>
-                                <option value="OPPOSITION">🔴 Oposición</option>
-                                <option value="DOES_NOT_VOTE">⛔ No Vota</option>
+                                <option value="OPPOSITION_INTERNAL">🔴 Oposición (Interna)</option>
+                                <option value="OPPOSITION_PARTY">🔴 Oposición (Otro Partido)</option>
+                                <option value="WONT_VOTE">⛔ No Vota</option>
                             </select>
                         </div>
 
                     <div>
                         <label className="block text-[10px] font-bold text-zinc-500 mb-2">AFILIACIÓN</label>
                         <div className="flex gap-2">
-                            {['TODOS', 'ANR', 'PLRA', 'OTROS'].map((p) => (
+                            {['TODOS', 'ANR', 'PLRA', 'OTRO', 'INDEPENDIENTE', 'SIN_AFILIACION'].map((p) => (
                                 <button
                                     key={p}
                                     onClick={() => setFilters({...filters, party: p})}
@@ -138,7 +136,7 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
 
                 <hr className="border-zinc-800" />
 
-                {/* 3. OPERATIVO (Etiquetas y Estados) */}
+                {/* 3. OPERATIVO */}
                 <div className="space-y-3">
                     <h3 className="text-xs font-black text-emerald-500 uppercase tracking-wider flex items-center gap-2">
                         <CheckCircle size={14}/> Estado Operativo
@@ -161,7 +159,7 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
                             <label className="block text-[10px] font-bold text-zinc-500 mb-1">BITÁCORA / VISITAS</label>
                             <select 
                                 className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-sm text-white focus:border-emerald-500 outline-none"
-                                value={filters.campaignStatus} // Use campaignStatus instead of visitedStatus
+                                value={filters.campaignStatus}
                                 onChange={(e) => setFilters({...filters, campaignStatus: e.target.value})}
                             >
                                 <option value="ALL">Todas las situaciones</option>
@@ -169,12 +167,13 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
                                 <option value="TO_VISIT">📅 Por Visitar</option>
                                 <option value="CONTACTED">📞 Contactado</option>
                                 <option value="VISITED">✅ Visitado</option>
+                                <option value="VISITED_PC">🟢 Pasó por PC</option>
                                 <option value="DO_NOT_DISTURB">⛔ No Molestar</option>
                             </select>
                         </div>
                     </div>
 
-                    {/* ETIQUETAS (AHORA SÍ CONECTADO A LA BD) */}
+                    {/* ETIQUETAS */}
                     <div>
                         <label className="block text-[10px] font-bold text-zinc-500 mb-1">ETIQUETAS</label>
                         <div className="relative">
@@ -194,6 +193,52 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
                                 ) : (
                                     <option value="" disabled>Sin etiquetas creadas</option>
                                 )}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <hr className="border-zinc-800" />
+
+                {/* 4. PEDIDOS Y FINANZAS */}
+                <div className="space-y-3">
+                    <h3 className="text-xs font-black text-amber-500 uppercase tracking-wider flex items-center gap-2">
+                        📋 Pedidos y Finanzas
+                    </h3>
+                    
+                    <label className="flex items-center gap-3 text-sm text-zinc-300 cursor-pointer hover:bg-zinc-900/50 p-2 rounded-lg transition-colors">
+                        <input
+                            type="checkbox"
+                            checked={filters.hasRequests === true || filters.hasRequests === 'true'}
+                            onChange={(e) => setFilters({...filters, hasRequests: e.target.checked})}
+                            className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-amber-500 focus:ring-amber-500"
+                        />
+                        Solo con pedidos registrados
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-[10px] font-bold text-zinc-500 mb-1">SOLICITUD FINANCIERA</label>
+                            <select
+                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-sm text-white focus:border-amber-500 outline-none"
+                                value={filters.hasFinancialNeeds}
+                                onChange={(e) => setFilters({...filters, hasFinancialNeeds: e.target.value})}
+                            >
+                                <option value="ALL">Todos</option>
+                                <option value="true">💰 Solicitó Aporte</option>
+                                <option value="false">Sin Solicitud</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-zinc-500 mb-1">AYUDA ENTREGADA</label>
+                            <select
+                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-sm text-white focus:border-amber-500 outline-none"
+                                value={filters.financialNeedsFulfilled}
+                                onChange={(e) => setFilters({...filters, financialNeedsFulfilled: e.target.value})}
+                            >
+                                <option value="ALL">Todos</option>
+                                <option value="true">✅ Entregado</option>
+                                <option value="false">⏳ Pendiente</option>
                             </select>
                         </div>
                     </div>

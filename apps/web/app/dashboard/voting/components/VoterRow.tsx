@@ -121,7 +121,7 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                 if (tempPassedPC) {
                     patch.campaignStatus = 'VISITED_PC';
                 } else if (!tempPassedPC && voter.campaign_status === 'VISITED_PC') {
-                    patch.campaignStatus = 'PENDING'; // Or whatever default
+                    patch.campaignStatus = 'NOT_VISITED';
                 }
             }
 
@@ -310,7 +310,7 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                          className={`p-2 rounded-lg transition-colors ${
                              voter.current_vote_intent === 'SURE' ? 'text-emerald-500 bg-emerald-500/10' : 
                              voter.current_vote_intent === 'PROBABLE' ? 'text-yellow-500' :
-                             voter.current_vote_intent === 'OPPOSITION' ? 'text-red-500' : 'text-zinc-600'
+                             (voter.current_vote_intent === 'OPPOSITION_INTERNAL' || voter.current_vote_intent === 'OPPOSITION_PARTY') ? 'text-red-500' : 'text-zinc-600'
                          } hover:bg-white/10`}
                     >
                         <User size={16} />
@@ -321,7 +321,8 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                                 { val: 'SURE', label: 'VOTO SEGURO 🟢' },
                                 { val: 'PROBABLE', label: 'PROBABLE 🟡' },
                                 { val: 'UNDECIDED', label: 'INDECISO ⚪' },
-                                { val: 'OPPOSITION', label: 'OPOSICIÓN 🔴' },
+                                { val: 'OPPOSITION_INTERNAL', label: 'OPOSICIÓN (INTERNA) 🔴' },
+                                { val: 'OPPOSITION_PARTY', label: 'OPOSICIÓN (OTRO PARTIDO) 🔴' },
                             ].map(opt => (
                                 <button
                                     key={opt.val}

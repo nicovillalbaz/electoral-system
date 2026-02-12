@@ -5,13 +5,14 @@ import { useParams, useRouter } from "next/navigation";
 import { Loader2, ArrowLeft, Users, MonitorPlay } from "lucide-react";
 import TeamTab from "../components/TeamTab";
 import MonitorTab from "../components/MonitorTab";
+import LogsTab from "../components/LogsTab";
 
 export default function StationDashboardPage() {
   const { id } = useParams();
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"TEAM" | "MONITOR">("TEAM");
+  const [activeTab, setActiveTab] = useState<"TEAM" | "MONITOR" | "LOGS">("TEAM");
 
   useEffect(() => {
     if (id) fetchData();
@@ -88,6 +89,16 @@ export default function StationDashboardPage() {
                     <MonitorPlay className="w-4 h-4" />
                     MONITOR
                 </button>
+                <button
+                    onClick={() => setActiveTab("LOGS")}
+                    className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${
+                        activeTab === "LOGS" 
+                        ? "bg-purple-900/30 text-purple-400 border border-purple-500/20 shadow-lg" 
+                        : "text-zinc-500 hover:text-zinc-300"
+                    }`}
+                >
+                    LOGS
+                </button>
             </div>
         </div>
       </div>
@@ -97,6 +108,7 @@ export default function StationDashboardPage() {
             <TeamTab 
                 stationId={id as string} 
                 collaborators={data.collaborators} 
+                users={data.users}
                 onRefresh={fetchData} 
             />
         )}
@@ -106,6 +118,10 @@ export default function StationDashboardPage() {
                 voters={data.voters.data}
                 total={data.voters.total} 
             />
+        )}
+
+        {activeTab === "LOGS" && (
+            <LogsTab stationId={id as string} />
         )}
       </div>
     </div>

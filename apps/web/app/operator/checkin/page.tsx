@@ -7,8 +7,9 @@ const VOTE_INTENT_CONFIG: any = {
   SURE: { label: 'VOTO SEGURO', color: 'bg-emerald-600', text: 'text-white', icon: '✅' },
   PROBABLE: { label: 'PROBABLE', color: 'bg-yellow-600', text: 'text-black', icon: '🤔' },
   UNDECIDED: { label: 'INDECISO', color: 'bg-zinc-600', text: 'text-white', icon: '❔' },
-  OPPOSITION: { label: 'OPOSICIÓN', color: 'bg-red-600', text: 'text-white', icon: '⛔' },
-  ABSTAIN: { label: 'NO VOTA', color: 'bg-orange-800', text: 'text-white', icon: '💀' },
+  OPPOSITION_INTERNAL: { label: 'OPOSICIÓN (INTERNA)', color: 'bg-red-700', text: 'text-white', icon: '⛔' },
+  OPPOSITION_PARTY: { label: 'OPOSICIÓN (OTRO)', color: 'bg-red-600', text: 'text-white', icon: '⛔' },
+  WONT_VOTE: { label: 'NO VOTA', color: 'bg-zinc-800', text: 'text-white', icon: '⚫' },
 };
 
 export default function CheckinPage() {
@@ -93,7 +94,7 @@ export default function CheckinPage() {
   const getCardStyle = () => {
     if (!person) return 'border-zinc-800 bg-zinc-900';
     if (person.current_vote_intent === 'SURE') return 'border-emerald-500 bg-zinc-900 ring-2 ring-emerald-500/20';
-    if (person.current_vote_intent === 'OPPOSITION') return 'border-red-900 bg-red-950/30';
+    if (person.current_vote_intent === 'OPPOSITION_INTERNAL' || person.current_vote_intent === 'OPPOSITION_PARTY') return 'border-red-900 bg-red-950/30';
     return 'border-zinc-700 bg-zinc-900';
   };
 
@@ -148,7 +149,7 @@ export default function CheckinPage() {
             </div>
             <h3 className="text-3xl font-bold mb-1 leading-tight">{person.last_name}</h3>
             <p className="text-xl text-zinc-300 mb-4">{person.first_name}</p>
-            {person.current_vote_intent === 'OPPOSITION' && (
+            {(person.current_vote_intent === 'OPPOSITION_INTERNAL' || person.current_vote_intent === 'OPPOSITION_PARTY') && (
               <div className="mt-4 p-3 bg-red-900/50 border border-red-500 text-red-200 text-sm font-bold rounded flex items-center gap-2">⚠️ CUIDADO: Oposición.</div>
             )}
           </div>

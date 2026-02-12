@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../../../../lib/api';
 import { AlertTriangle, Loader2, X, CheckCircle, Save, Plus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -31,13 +31,13 @@ export default function BulkUpdateModal({ isOpen, onClose, onSuccess, activeFilt
   const [newTagInput, setNewTagInput] = useState('');
 
   // Load Data on Open
-  useState(() => {
+  useEffect(() => {
     if (isOpen) {
         api.get('/stations').then(res => setStations(res.data)).catch(()=>{});
         api.get('/users').then(res => setUsers(res.data)).catch(()=>{});
         api.get('/tags').then(res => setAvailableTags(res.data)).catch(()=>{});
     }
-  });
+  }, [isOpen]);
 
   const toggleField = (field: string) => {
       setEnabledFields(prev => ({ ...prev, [field]: !prev[field] }));
@@ -136,7 +136,8 @@ export default function BulkUpdateModal({ isOpen, onClose, onSuccess, activeFilt
                                 <option value="SURE">VOTO SEGURO</option>
                                 <option value="PROBABLE">PROBABLE</option>
                                 <option value="UNDECIDED">INDECISO</option>
-                                <option value="OPPOSITION">OPOSICIÓN</option>
+                                <option value="OPPOSITION_INTERNAL">OPOSICIÓN (INTERNA)</option>
+                                <option value="OPPOSITION_PARTY">OPOSICIÓN (OTRO PARTIDO)</option>
                                 <option value="WONT_VOTE">NO VOTA</option>
                             </select>
                         </div>

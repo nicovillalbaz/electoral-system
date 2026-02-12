@@ -9,7 +9,7 @@ export async function tasksRoutes(app: FastifyInstance) {
     const queryZ = z.object({
       q: z.string().optional(),
       priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
-      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS', 'FINANCIAL']).optional(),
+      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS', 'FINANCIAL', 'TRANSPORT', 'FOOD', 'OTHER']).optional(),
       assignedUserId: z.string().uuid().optional(),
       relatedPersonId: z.string().uuid().optional(),
       startDate: z.string().datetime().optional(),
@@ -29,12 +29,14 @@ export async function tasksRoutes(app: FastifyInstance) {
       title: z.string().min(1),
       description: z.string().optional(),
       priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
-      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS', 'FINANCIAL']).optional(),
+      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS', 'FINANCIAL', 'TRANSPORT', 'FOOD', 'OTHER']).optional(),
       dueDate: z.string().datetime().optional(),
       assignedUserId: z.string().uuid().optional(),
       relatedPersonId: z.string().uuid().optional(),
       relatedListId: z.string().uuid().optional(),
       locationText: z.string().optional(),
+      locationLat: z.number().optional(),
+      locationLng: z.number().optional(),
     }).parse(req.body);
 
     const campaignId = req.user.campaignId;
@@ -48,7 +50,7 @@ export async function tasksRoutes(app: FastifyInstance) {
       title: z.string().optional(),
       description: z.string().optional(),
       priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
-      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS', 'FINANCIAL']).optional(),
+      taskType: z.enum(['VISIT', 'CALL', 'EVENT', 'LOGISTICS', 'FINANCIAL', 'TRANSPORT', 'FOOD', 'OTHER']).optional(),
       dueDate: z.string().datetime().optional(),
       assignedUserId: z.string().uuid().optional(),
       completed: z.boolean().optional(),

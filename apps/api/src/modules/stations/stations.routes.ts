@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireRole } from "../../common/middleware/role";
 import { notFound } from "../../common/http/errors";
-import { stationCreate, stationList, getStationStats, getStationCheckins, checkInToStation, stationUpdate } from "./stations.repo";
+import { stationCreate, stationList, getStationStats, getStationsStatsBatch, getStationCheckins, checkInToStation, stationUpdate, getStationDashboard, addCollaborator, removeCollaborator } from "./stations.repo";
 
 export async function stationsRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
@@ -20,6 +20,12 @@ export async function stationsRoutes(app: FastifyInstance) {
     }).parse(req.body);
 
     return stationCreate(req.user.campaignId, body);
+  });
+
+  app.get("/stats/batch", { preHandler: [app.requireAuth] }, async (req: any) => {
+    const q = z.object({ ids: z.string().optional() }).parse(req.query);
+    const ids = (q.ids ?? '').split(',').map((id) => id.trim()).filter(Boolean);
+    return getStationsStatsBatch(req.user.campaignId, ids);
   });
 
   app.get("/:id/stats", { preHandler: [app.requireAuth] }, async (req: any) => {
@@ -70,8 +76,6 @@ export async function stationsRoutes(app: FastifyInstance) {
         search: z.string().optional().default('')
     }).parse(req.query);
     
-    // Need to import getStationDashboard
-    const { getStationDashboard } = require("./stations.repo"); 
     return getStationDashboard(req.user.campaignId, params.id, query.page, query.limit, query.search);
   });
 
@@ -86,7 +90,6 @@ export async function stationsRoutes(app: FastifyInstance) {
         lastName: z.string().optional(),
     }).parse(req.body);
 
-    const { addCollaborator } = require("./stations.repo");
     return addCollaborator(
         req.user.campaignId, 
         params.id, 
@@ -102,7 +105,6 @@ export async function stationsRoutes(app: FastifyInstance) {
 
   app.delete("/:id/collaborators/:personId", { preHandler: [app.requireAuth] }, async (req: any) => {
     const params = z.object({ id: z.string().uuid(), personId: z.string().uuid() }).parse(req.params);
-    const { removeCollaborator } = require("./stations.repo");
     return removeCollaborator(req.user.campaignId, params.id, params.personId);
   });
 }

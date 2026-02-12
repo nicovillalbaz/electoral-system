@@ -41,6 +41,7 @@ export default function PersonModal({
   const [assignedTags, setAssignedTags] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [stations, setStations] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]); // <--- Users List
 
@@ -176,6 +177,8 @@ export default function PersonModal({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       if (isEditing) {
         // Minimalist Payload Logic
@@ -238,16 +241,18 @@ export default function PersonModal({
       onSuccess();
       onClose();
     } catch (error) {
-      console.error(error); // Log error for debugging
+      // error handled by alert below
       alert("Error al guardar.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div className="bg-zinc-950 border border-zinc-800 w-full max-w-2xl rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex min-h-full items-center justify-center bg-black/80 p-4">
+      <div className="w-full max-w-5xl transform overflow-hidden rounded-2xl bg-zinc-900 p-6 text-left align-middle shadow-xl transition-all max-h-[90vh] overflow-y-auto border border-zinc-800">
         
         {/* HEADER */}
         <div className="flex justify-between items-center p-6 border-b border-zinc-800 bg-zinc-900/50">
@@ -272,7 +277,7 @@ export default function PersonModal({
                 
                 {/* NEW PERSON FIELDS */}
                 {/* NEW PERSON FIELDS (Or Readonly if Editing) */}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {!isEditing ? (
                         <>
                         <div>
@@ -321,7 +326,6 @@ export default function PersonModal({
                             <h3 className="text-xs font-black text-zinc-400 uppercase flex items-center gap-2"><Tag size={12} /> Etiquetas</h3>
                             <div className="flex gap-2">
                             <select className="bg-black border border-zinc-700 text-xs text-white rounded px-2 outline-none" onChange={(e) => { handleAssignTag(e.target.value); e.target.value = ""; }}>
-                                <option value="">+ Asignar</option>
                                 <option value="">+ Asignar</option>
                                 {localTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
                             </select>
@@ -400,8 +404,9 @@ export default function PersonModal({
                                 <option value="SURE">VOTO SEGURO</option>
                                 <option value="PROBABLE">PROBABLE</option>
                                 <option value="UNDECIDED">INDECISO</option>
-                                <option value="OPPOSITION">OPOSICIÓN</option>
-                                <option value="DOES_NOT_VOTE">NO VOTA</option>
+                                <option value="OPPOSITION_INTERNAL">OPOSICIÓN (INTERNA)</option>
+                                <option value="OPPOSITION_PARTY">OPOSICIÓN (OTRO PARTIDO)</option>
+                                <option value="WONT_VOTE">NO VOTA</option>
                             </select>
                          </div>
                          <div>
@@ -411,6 +416,7 @@ export default function PersonModal({
                                 <option value="TO_VISIT">POR VISITAR</option>
                                 <option value="CONTACTED">CONTACTADO</option>
                                 <option value="VISITED">VISITADO</option>
+                                <option value="VISITED_PC">PASÓ POR PC</option>
                                 <option value="DO_NOT_DISTURB">⛔ NO MOLESTAR</option>
                             </select>
                          </div>
@@ -457,10 +463,9 @@ export default function PersonModal({
                                                 if (val) {
                                                     const newReq = {
                                                         type: newRequestType,
-                                                        detail: val,
+                                                        subtypes: [val],
                                                         assignedUserId: newRequestAssignee || null,
-                                                        status: 'PENDING',
-                                                        createdAt: new Date().toISOString()
+                                                        status: 'PENDING'
                                                     };
                                                     setFormData({ ...formData, requests: [...formData.requests, newReq] });
                                                     setNewRequestDetail("");
@@ -477,10 +482,9 @@ export default function PersonModal({
                                             if (val) {
                                                 const newReq = {
                                                     type: newRequestType,
-                                                    detail: val,
+                                                    subtypes: [val],
                                                     assignedUserId: newRequestAssignee || null,
-                                                    status: 'PENDING',
-                                                    createdAt: new Date().toISOString()
+                                                    status: 'PENDING'
                                                 };
                                                 setFormData({ ...formData, requests: [...formData.requests, newReq] });
                                                 setNewRequestDetail("");
@@ -497,7 +501,7 @@ export default function PersonModal({
                                 {formData.requests.map((req, idx) => {
                                     // Handle legacy string requests or new objects
                                     const isString = typeof req === 'string';
-                                    const detail = isString ? req : req.detail;
+                                    const detail = isString ? req : (req.detail || (Array.isArray(req.subtypes) ? req.subtypes.join(", ") : ""));
                                     const type = isString ? 'LOGISTICS' : req.type;
                                     const assigneeId = isString ? null : req.assignedUserId;
                                     const assigneeName = assigneeId ? users.find(u => u.id === assigneeId)?.full_name : null;
@@ -578,7 +582,15 @@ export default function PersonModal({
         {/* FOOTER */}
         <div className="p-6 border-t border-zinc-800 flex justify-end gap-3 bg-zinc-900/50">
             <button onClick={onClose} className="px-4 py-2 text-zinc-400 hover:text-white font-bold">CANCELAR</button>
-            {activeTab === "details" && <button onClick={handleSave} className="px-6 py-2 bg-white text-black font-bold rounded hover:bg-zinc-200">GUARDAR</button>}
+            {activeTab === "details" && (
+              <button
+                onClick={handleSave}
+                disabled={isSubmitting}
+                className="px-6 py-2 bg-white text-black font-bold rounded hover:bg-zinc-200 disabled:opacity-50"
+              >
+                GUARDAR
+              </button>
+            )}
         </div>
 
       </div>

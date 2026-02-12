@@ -51,20 +51,29 @@ export async function listMissingByTerritory(input: {
 }) {
   const params: any[] = [input.campaignId];
   // Hierarchy Support
-  let where = `WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) AND has_voted=false`;
+  let where = `WHERE (p.campaign_id=$1 OR p.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) AND p.has_voted=false`;
 
-  if (input.cityId) { params.push(input.cityId); where += ` AND city_id=$${params.length}`; }
-  if (input.zoneId) { params.push(input.zoneId); where += ` AND zone_id=$${params.length}`; }
-  if (input.neighborhoodId) { params.push(input.neighborhoodId); where += ` AND neighborhood_id=$${params.length}`; }
+  if (input.cityId) { params.push(input.cityId); where += ` AND p.city_id=$${params.length}`; }
+  if (input.zoneId) { params.push(input.zoneId); where += ` AND p.zone_id=$${params.length}`; }
+  if (input.neighborhoodId) { params.push(input.neighborhoodId); where += ` AND p.neighborhood_id=$${params.length}`; }
 
   const limit = input.limit ?? 200;
   params.push(limit);
 
   const res = await query(
-    `SELECT id, document_id, first_name, last_name, current_vote_intent, city_id, zone_id, neighborhood_id
-     FROM persons
+    `SELECT 
+        p.id, 
+        g.document_id, 
+        g.first_name, 
+        g.last_name, 
+        p.current_vote_intent, 
+        p.city_id, 
+        p.zone_id, 
+        p.neighborhood_id
+     FROM persons p
+     JOIN global_citizens g ON p.citizen_id = g.id
      ${where}
-     ORDER BY last_name, first_name
+     ORDER BY g.last_name, g.first_name
      LIMIT $${params.length}`,
     params
   );
@@ -85,8 +94,9 @@ export async function createTransportTask(
         SELECT g.first_name, g.last_name 
         FROM persons p 
         JOIN global_citizens g ON p.citizen_id = g.id 
-        WHERE p.id = $1
-    `, [data.personId]);
+        WHERE p.id = $2
+          AND (p.campaign_id = $1 OR p.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))
+    `, [campaignId, data.personId]);
     
     if (pRes.rows.length === 0) throw new Error("Person not found");
     const p = pRes.rows[0];
@@ -122,8 +132,9 @@ export async function createFinancialTask(
         SELECT g.first_name, g.last_name 
         FROM persons p 
         JOIN global_citizens g ON p.citizen_id = g.id 
-        WHERE p.id = $1
-    `, [data.personId]);
+        WHERE p.id = $2
+          AND (p.campaign_id = $1 OR p.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))
+    `, [campaignId, data.personId]);
     
     if (pRes.rows.length === 0) throw new Error("Person not found");
     const p = pRes.rows[0];
@@ -160,11 +171,14 @@ export async function getDayDGrid(campaignId: string, params: {
     
     // Hierarchy Support
     let where = `(p.campaign_id = $1 OR p.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))`;
+    let exactDocParamIndex: number | null = null;
     
     if (q) {
-        where += ` AND (g.document_id ILIKE $${paramIndex} OR g.first_name ILIKE $${paramIndex} OR g.last_name ILIKE $${paramIndex})`;
-        queryParams.push(`%${q}%`);
-        paramIndex++;
+        exactDocParamIndex = paramIndex;
+        const likeParamIndex = paramIndex + 1;
+        where += ` AND (g.document_id = $${exactDocParamIndex} OR g.document_id ILIKE $${likeParamIndex} OR g.first_name ILIKE $${likeParamIndex} OR g.last_name ILIKE $${likeParamIndex})`;
+        queryParams.push(q, `%${q}%`);
+        paramIndex += 2;
     }
 
     const sql = `
@@ -192,6 +206,7 @@ export async function getDayDGrid(campaignId: string, params: {
       JOIN global_citizens g ON p.citizen_id = g.id
       WHERE ${where}
       ORDER BY 
+        ${exactDocParamIndex ? `CASE WHEN g.document_id = $${exactDocParamIndex} THEN 1 ELSE 0 END DESC,` : ``}
         p.has_voted ASC, -- Primero los que no votaron
         g.last_name ASC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -204,7 +219,7 @@ export async function getDayDGrid(campaignId: string, params: {
 }
 
 // 4. Detección de Colisiones GLOBAL (Cross-PC)
-export async function checkCollision(citizenId: string): Promise<{ active: boolean; details?: any }> {
+export async function checkCollision(campaignId: string, citizenId: string): Promise<{ active: boolean; details?: any }> {
   // Buscamos si la persona tiene actividad RECIENTE (últimas 2 horas) 
   // en OTRO puesto de comando diferente al actual se chequeará en el service
   const sql = `
@@ -217,12 +232,13 @@ export async function checkCollision(citizenId: string): Promise<{ active: boole
     JOIN users u ON lt.operator_id = u.id
     JOIN persons p ON lt.person_id = p.id
     WHERE p.citizen_id = $1 
+      AND (lt.campaign_id = $2 OR lt.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $2))
       AND lt.recorded_at > NOW() - INTERVAL '2 hours'
     ORDER BY lt.recorded_at DESC
     LIMIT 1
   `;
   
-  const res = await query(sql, [citizenId]);
+  const res = await query(sql, [citizenId, campaignId]);
   if (res.rows.length > 0) {
     return { active: true, details: res.rows[0] };
   }

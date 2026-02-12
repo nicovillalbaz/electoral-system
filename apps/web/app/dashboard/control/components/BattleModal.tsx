@@ -13,6 +13,7 @@ interface Person {
   has_voted: boolean;
   needs_transport: boolean;
   has_financial_needs: boolean;
+  assigned_station_id?: string;
   // Add other fields as needed
 }
 
@@ -115,15 +116,19 @@ export default function BattleModal({ person, onClose, onUpdate }: BattleModalPr
   const handlePassPC = async () => {
       setLoading("pc");
       try {
-          const res = await fetch("/api/voting/status", {
+          if (!person.assigned_station_id) {
+              alert("Asigná un PC antes de registrar el paso.");
+              return;
+          }
+          const res = await fetch("/api/stations/checkin", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 personId: person.id,
-                status: 'CHECKED_IN' // Or appropriate status for "Passed PC"
+                stationId: person.assigned_station_id
             })
           });
-          if (!res.ok) throw new Error("Error updating status");
+          if (!res.ok) throw new Error("Error registering checkin");
           onUpdate();
           onClose(); // Close on check-in?
       } catch (e) {
@@ -135,7 +140,7 @@ export default function BattleModal({ person, onClose, onUpdate }: BattleModalPr
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl w-full max-w-2xl max-w-[95vw] overflow-hidden animate-in fade-in zoom-in duration-200">
         
         {/* Header */}
         <div className="p-6 border-b border-zinc-800 flex justify-between items-start bg-zinc-950">
@@ -181,7 +186,7 @@ export default function BattleModal({ person, onClose, onUpdate }: BattleModalPr
         </div>
 
         {/* Actions Grid */}
-        <div className="p-6 grid grid-cols-2 gap-4">
+        <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
           
           {/* YA VOTÓ */}
           <button

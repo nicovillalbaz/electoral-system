@@ -1,32 +1,18 @@
 "use client";
 
-import { Trash2, User, Shield, Truck, Briefcase, DollarSign } from "lucide-react";
+import { Trash2 } from "lucide-react";
+import { ROLE_ICONS, ROLE_COLORS } from "../../components/teamRoleStyles";
 import { useState } from "react";
 import TeamMemberModal from "./TeamMemberModal";
-
-const ROLE_ICONS: Record<string, any> = {
-  JEFE: Briefcase,
-  SEGURIDAD: Shield,
-  CHOFER: Truck,
-  CAJA: DollarSign,
-  DEFAULT: User
-};
-
-const ROLE_COLORS: Record<string, string> = {
-  JEFE: "text-purple-400 bg-purple-400/10 border-purple-400/20",
-  SEGURIDAD: "text-red-400 bg-red-400/10 border-red-400/20",
-  CHOFER: "text-blue-400 bg-blue-400/10 border-blue-400/20",
-  CAJA: "text-amber-400 bg-amber-400/10 border-amber-400/20",
-  DEFAULT: "text-zinc-400 bg-zinc-800 border-zinc-700"
-};
 
 interface TeamTabProps {
   stationId: string;
   collaborators: any[];
+  users?: any[];
   onRefresh: () => void;
 }
 
-export default function TeamTab({ stationId, collaborators, onRefresh }: TeamTabProps) {
+export default function TeamTab({ stationId, collaborators, users = [], onRefresh }: TeamTabProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -114,6 +100,30 @@ export default function TeamTab({ stationId, collaborators, onRefresh }: TeamTab
             No hay colaboradores asignados aún.
           </div>
         )}
+      </div>
+
+      <div className="mt-8">
+        <h4 className="text-sm font-bold text-zinc-400 uppercase mb-3">Usuarios Asignados al PC</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {users.map((u) => (
+            <div
+              key={u.id}
+              className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex items-center justify-between"
+            >
+              <div>
+                <div className="font-bold text-zinc-200">{u.full_name}</div>
+                <div className="text-xs text-zinc-500 font-mono">
+                  {u.role}{u.operational_role ? ` · ${u.operational_role}` : ""}
+                </div>
+              </div>
+            </div>
+          ))}
+          {users.length === 0 && (
+            <div className="col-span-full py-8 text-center border border-zinc-800 rounded-xl text-zinc-600">
+              Sin usuarios asignados.
+            </div>
+          )}
+        </div>
       </div>
 
       <TeamMemberModal

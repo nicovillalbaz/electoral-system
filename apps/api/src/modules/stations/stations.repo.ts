@@ -1,5 +1,68 @@
 import { query } from "../../db/query";
+import { forbidden } from "../../common/http/errors";
 
+async function assertStationInCampaign(campaignId: string, stationId: string) {
+  const res = await query(
+    `SELECT 1 FROM stations WHERE id=$1 AND campaign_id=$2`,
+    [stationId, campaignId]
+  );
+  if ((res.rowCount ?? 0) === 0) {
+    throw forbidden("Station not found or access denied");
+  }
+}
+
+
+
+type FinancialTaskSource = {
+  table: "station_tasks" | "tasks";
+  typeColumn: "type" | "task_type";
+  personColumn: "person_id" | "related_person_id";
+  hasStationId: boolean;
+};
+
+async function resolveFinancialTaskSource(): Promise<FinancialTaskSource | null> {
+  const stationTasksRes = await query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'station_tasks'
+       AND column_name IN ('type', 'person_id', 'related_person_id', 'station_id')`
+  );
+
+  const stationColumns = new Set(stationTasksRes.rows.map((r: any) => r.column_name));
+  const hasStationTasks = stationColumns.has('type') && (stationColumns.has('person_id') || stationColumns.has('related_person_id'));
+
+  if (hasStationTasks) {
+    return {
+      table: 'station_tasks',
+      typeColumn: 'type',
+      personColumn: stationColumns.has('person_id') ? 'person_id' : 'related_person_id',
+      hasStationId: stationColumns.has('station_id')
+    };
+  }
+
+  const tasksRes = await query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'tasks'
+       AND column_name IN ('task_type', 'related_person_id')`
+  );
+
+  const tasksColumns = new Set(tasksRes.rows.map((r: any) => r.column_name));
+  const hasTasks = tasksColumns.has('task_type') && tasksColumns.has('related_person_id');
+
+  if (hasTasks) {
+    return {
+      table: 'tasks',
+      typeColumn: 'task_type',
+      personColumn: 'related_person_id',
+      hasStationId: false
+    };
+  }
+
+  return null;
+}
 export async function stationCreate(campaignId: string, data: any) {
   const res = await query(
     `INSERT INTO stations (campaign_id, name, status, city_id, zone_id, neighborhood_id, address, manager_user_id)
@@ -21,11 +84,16 @@ export async function stationCreate(campaignId: string, data: any) {
 export async function stationList(campaignId: string) {
   // Enhanced query with KPIs
   const res = await query(
-    `SELECT s.*,
-        (SELECT COUNT(*) FROM persons p WHERE p.assigned_station_id = s.id AND p.campaign_id = $1) as assigned_count,
-        (SELECT COUNT(*) FROM persons p WHERE p.assigned_station_id = s.id AND p.campaign_id = $1 AND (p.status_day_d = 'VOTED' OR p.has_voted = true)) as voted_count
-     FROM stations s 
-     WHERE s.campaign_id=$1 AND s.deleted_at IS NULL 
+    `SELECT 
+        s.*,
+        COUNT(p.id) FILTER (WHERE p.assigned_station_id = s.id) as assigned_count,
+        COUNT(p.id) FILTER (WHERE p.assigned_station_id = s.id AND (p.status_day_d = 'VOTED' OR p.has_voted = true)) as voted_count
+     FROM stations s
+     LEFT JOIN persons p 
+       ON p.assigned_station_id = s.id 
+      AND p.campaign_id = $1
+     WHERE s.campaign_id=$1 AND s.deleted_at IS NULL
+     GROUP BY s.id
      ORDER BY s.name`,
     [campaignId]
   );
@@ -69,38 +137,67 @@ export async function stationUpdate(campaignId: string, id: string, data: any) {
 
 export async function stationDelete(campaignId: string, id: string) {
     // Soft Delete
-    await query(`UPDATE stations SET deleted_at = NOW(), status='DELETED' WHERE id=$1 AND campaign_id=$2`, [id, campaignId]);
+    await query(`UPDATE stations SET deleted_at = NOW(), status='INACTIVE' WHERE id=$1 AND campaign_id=$2`, [id, campaignId]);
     return { success: true };
 }
 
 export async function getStationStats(campaignId: string, stationId: string) {
-  // 1. Total asignados (mock o real si existe tabla de asignación)
-  // Por ahora, cuenta cuantos checkins únicos hubo hoy
-  const totalCheckinsQuery = await query(
-    `SELECT count(DISTINCT person_id) as val 
-     FROM station_checkins 
-     WHERE campaign_id=$1 AND station_id=$2 AND checkin_at::date=CURRENT_DATE`,
+  await assertStationInCampaign(campaignId, stationId);
+
+  const source = await resolveFinancialTaskSource();
+  const financialSubquery = source
+    ? source.table === 'station_tasks'
+      ? `(
+          SELECT COALESCE(SUM(p.financial_amount), 0)
+          FROM station_tasks st
+          JOIN persons p ON p.id = st.${source.personColumn}
+          WHERE st.campaign_id = $1
+            AND st.${source.typeColumn} = 'FINANCIAL'
+            AND st.created_at >= CURRENT_DATE
+            AND st.created_at < CURRENT_DATE + INTERVAL '1 day'
+            ${source.hasStationId ? 'AND st.station_id = $2' : ''}
+            ${source.hasStationId ? '' : 'AND p.assigned_station_id = $2'}
+            AND p.campaign_id = $1
+        ) as financial_total_today`
+      : `(
+          SELECT COALESCE(SUM(p.financial_amount), 0)
+          FROM tasks t
+          JOIN persons p ON p.id = t.${source.personColumn}
+          WHERE t.campaign_id = $1
+            AND t.${source.typeColumn} = 'FINANCIAL'
+            AND t.created_at >= CURRENT_DATE
+            AND t.created_at < CURRENT_DATE + INTERVAL '1 day'
+            AND p.campaign_id = $1
+            AND p.assigned_station_id = $2
+        ) as financial_total_today`
+    : `0 as financial_total_today`;
+
+  const res = await query(
+    `SELECT
+        (SELECT COUNT(*)::int
+           FROM users
+          WHERE campaign_id = $1
+            AND assigned_station_id = $2
+            AND is_active = true) as staff_count,
+        (SELECT COUNT(*)::int
+           FROM station_checkins
+          WHERE campaign_id = $1
+            AND station_id = $2
+            AND checkin_at >= CURRENT_DATE
+            AND checkin_at < CURRENT_DATE + INTERVAL '1 day') as checkins_today,
+        ${financialSubquery}`,
     [campaignId, stationId]
   );
 
-  // 2. Cuantos de esos checkins ya tienen voto confirmado (Fuga de votos)
-  // Join con persons para ver has_voted=true
-  const votedCheckinsQuery = await query(
-    `SELECT count(DISTINCT sc.person_id) as val
-     FROM station_checkins sc
-     JOIN persons p ON sc.person_id = p.id
-     WHERE sc.campaign_id=$1 
-       AND sc.station_id=$2 
-       AND sc.checkin_at::date=CURRENT_DATE
-       AND p.has_voted=true`,
-    [campaignId, stationId]
-  );
+  const row = res.rows[0] || {};
 
   return {
-    total_checkins: parseInt(totalCheckinsQuery.rows[0].val),
-    voted_checkins: parseInt(votedCheckinsQuery.rows[0].val)
+    staff_count: parseInt(row.staff_count ?? 0),
+    checkins_today: parseInt(row.checkins_today ?? 0),
+    financial_total_today: Number(row.financial_total_today ?? 0)
   };
 }
+
 
 export async function getStationCheckins(campaignId: string, stationId: string) {
     const res = await query(
@@ -115,13 +212,24 @@ export async function getStationCheckins(campaignId: string, stationId: string) 
          FROM station_checkins sc
          JOIN persons p ON sc.person_id = p.id
          JOIN global_citizens g ON p.citizen_id = g.id
-         WHERE sc.campaign_id=$1 AND sc.station_id=$2 AND sc.checkin_at::date=CURRENT_DATE
+         WHERE sc.campaign_id=$1 
+           AND sc.station_id=$2 
+           AND sc.checkin_at >= CURRENT_DATE 
+           AND sc.checkin_at < CURRENT_DATE + INTERVAL '1 day'
          ORDER BY sc.checkin_at DESC`,
         [campaignId, stationId]
     );
     return res.rows;
 }
 export async function checkInToStation(campaignId: string, stationId: string, personId: string, userId: string) {
+    await assertStationInCampaign(campaignId, stationId);
+    const personRes = await query(
+        `SELECT 1 FROM persons WHERE id=$1 AND campaign_id=$2`,
+        [personId, campaignId]
+    );
+    if ((personRes.rowCount ?? 0) === 0) {
+        throw forbidden("Person not found or access denied");
+    }
     // 1. Check if already checked in today?
     // Database constraint usually handles duplicate checkins (station_checkins_pkey typically includes date or unique index).
     // Let's assume schema allows multiple checkins or we just insert.
@@ -148,9 +256,109 @@ export async function checkInToStation(campaignId: string, stationId: string, pe
     // User asked for "Checkin Logic". 
     // Let's also update the person's campaign_status if it's "lower" than checked in?
     // Actually, let's just log event.
+    // Sync Day-D status to keep it consistent with station_checkins
+    await query(
+        `UPDATE persons 
+         SET status_day_d = 'CHECKED_IN', updated_at = NOW()
+         WHERE id=$1 AND campaign_id=$2`,
+        [personId, campaignId]
+    );
     return { success: (res.rowCount ?? 0) > 0 };
 }
 
+
+
+export async function getStationsStatsBatch(campaignId: string, stationIds: string[]) {
+  const ids = Array.from(new Set(stationIds)).filter(Boolean);
+  if (ids.length === 0) return {};
+
+  const source = await resolveFinancialTaskSource();
+
+  const financialCte = source
+    ? source.table === 'station_tasks'
+      ? `financial AS (
+          SELECT
+            ${source.hasStationId ? 'st.station_id' : 'p.assigned_station_id'} as station_id,
+            COALESCE(SUM(p.financial_amount), 0) as financial_total_today
+          FROM station_tasks st
+          JOIN persons p ON p.id = st.${source.personColumn}
+          WHERE st.campaign_id = $1
+            AND st.${source.typeColumn} = 'FINANCIAL'
+            AND st.created_at >= CURRENT_DATE
+            AND st.created_at < CURRENT_DATE + INTERVAL '1 day'
+            ${source.hasStationId ? 'AND st.station_id = ANY($2::uuid[])' : ''}
+            ${source.hasStationId ? '' : 'AND p.assigned_station_id = ANY($2::uuid[])'}
+            AND p.campaign_id = $1
+          GROUP BY ${source.hasStationId ? 'st.station_id' : 'p.assigned_station_id'}
+        )`
+      : `financial AS (
+          SELECT
+            p.assigned_station_id as station_id,
+            COALESCE(SUM(p.financial_amount), 0) as financial_total_today
+          FROM tasks t
+          JOIN persons p ON p.id = t.${source.personColumn}
+          WHERE t.campaign_id = $1
+            AND t.${source.typeColumn} = 'FINANCIAL'
+            AND t.created_at >= CURRENT_DATE
+            AND t.created_at < CURRENT_DATE + INTERVAL '1 day'
+            AND p.campaign_id = $1
+            AND p.assigned_station_id = ANY($2::uuid[])
+          GROUP BY p.assigned_station_id
+        )`
+    : `financial AS (
+          SELECT NULL::uuid as station_id, 0::numeric as financial_total_today
+          WHERE false
+        )`;
+
+  const sql = `
+    WITH staff AS (
+      SELECT assigned_station_id as station_id, COUNT(*)::int as staff_count
+      FROM users
+      WHERE campaign_id = $1
+        AND is_active = true
+        AND assigned_station_id = ANY($2::uuid[])
+      GROUP BY assigned_station_id
+    ),
+    checkins AS (
+      SELECT station_id, COUNT(*)::int as checkins_today
+      FROM station_checkins
+      WHERE campaign_id = $1
+        AND station_id = ANY($2::uuid[])
+        AND checkin_at >= CURRENT_DATE
+        AND checkin_at < CURRENT_DATE + INTERVAL '1 day'
+      GROUP BY station_id
+    ),
+    ${financialCte}
+    SELECT
+      s.id as station_id,
+      COALESCE(staff.staff_count, 0) as staff_count,
+      COALESCE(checkins.checkins_today, 0) as checkins_today,
+      COALESCE(financial.financial_total_today, 0) as financial_total_today
+    FROM stations s
+    LEFT JOIN staff ON staff.station_id = s.id
+    LEFT JOIN checkins ON checkins.station_id = s.id
+    LEFT JOIN financial ON financial.station_id = s.id
+    WHERE s.campaign_id = $1
+      AND s.id = ANY($2::uuid[])
+  `;
+
+  const res = await query(sql, [campaignId, ids]);
+
+  const result: Record<string, { staff: number; checkins: number; financial: number }> = {};
+  ids.forEach((id) => {
+    result[id] = { staff: 0, checkins: 0, financial: 0 };
+  });
+
+  res.rows.forEach((row: any) => {
+    result[row.station_id] = {
+      staff: parseInt(row.staff_count ?? 0),
+      checkins: parseInt(row.checkins_today ?? 0),
+      financial: Number(row.financial_total_today ?? 0)
+    };
+  });
+
+  return result;
+}
 // --- TEAM MANAGEMENT ---
 
 // --- TEAM MANAGEMENT ---
@@ -159,7 +367,18 @@ import { personCreate } from "../persons/persons.repo";
 import { query as _query } from "../../db/query"; // Alias just in case, but we use 'query' imported above
 
 export async function addCollaborator(campaignId: string, stationId: string, personId: string | null, role: string, citizenData?: any) {
+    await assertStationInCampaign(campaignId, stationId);
     let targetPersonId = personId;
+
+    if (targetPersonId) {
+        const pRes = await query(
+            `SELECT 1 FROM persons WHERE id=$1 AND campaign_id=$2`,
+            [targetPersonId, campaignId]
+        );
+        if ((pRes.rowCount ?? 0) === 0) {
+            throw forbidden("Person not found or access denied");
+        }
+    }
 
     // 1. Strict CI-based Lookup / Creation
     if (citizenData && citizenData.documentId) {
@@ -226,6 +445,7 @@ export async function addCollaborator(campaignId: string, stationId: string, per
 }
 
 export async function removeCollaborator(campaignId: string, stationId: string, personId: string) {
+    await assertStationInCampaign(campaignId, stationId);
     await query(
         `DELETE FROM station_collaborators WHERE station_id=$1 AND person_id=$2`,
         [stationId, personId]
@@ -237,22 +457,37 @@ export async function removeCollaborator(campaignId: string, stationId: string, 
 
 export async function getStationDashboard(campaignId: string, stationId: string, page: number = 1, limit: number = 50, search: string = '') {
     const offset = (page - 1) * limit;
+    await assertStationInCampaign(campaignId, stationId);
 
     // 1. Collaborators
     const collaborators = await query(
         `SELECT sc.*, g.first_name, g.last_name, g.document_id
          FROM station_collaborators sc
+         JOIN stations s ON sc.station_id = s.id
          JOIN persons p ON sc.person_id = p.id
          JOIN global_citizens g ON p.citizen_id = g.id
-         WHERE sc.station_id=$1`,
-        [stationId]
+         WHERE sc.station_id=$1 AND s.campaign_id=$2 AND p.campaign_id=$2`,
+        [stationId, campaignId]
+    );
+
+    const assignedUsers = await query(
+        `SELECT id, full_name, role, operational_role, assigned_station_id
+         FROM users
+         WHERE campaign_id=$1 AND assigned_station_id=$2 AND is_active=true
+         ORDER BY full_name`,
+        [campaignId, stationId]
     );
 
     // 2. Stats (Fixed: Uses station_checkins for visits)
     const statsQuery = await query(
         `SELECT 
             (SELECT COUNT(*) FROM persons WHERE assigned_station_id=$1 AND campaign_id=$2) as total_assigned,
-            (SELECT COUNT(DISTINCT person_id) FROM station_checkins WHERE station_id=$1 AND campaign_id=$2 AND checkin_at::date = CURRENT_DATE) as total_visited_pc,
+            (SELECT COUNT(DISTINCT person_id) 
+               FROM station_checkins 
+              WHERE station_id=$1 
+                AND campaign_id=$2 
+                AND checkin_at >= CURRENT_DATE 
+                AND checkin_at < CURRENT_DATE + INTERVAL '1 day') as total_visited_pc,
             (SELECT COUNT(*) FROM persons WHERE assigned_station_id=$1 AND campaign_id=$2 AND (status_day_d='VOTED' OR has_voted=true)) as total_voted
          FROM persons
          WHERE campaign_id=$2`, 
@@ -268,17 +503,22 @@ export async function getStationDashboard(campaignId: string, stationId: string,
         params.push(`%${search}%`);
     }
 
+    const baseParams = [...params];
+    const limitParam = baseParams.length + 1;
+    const offsetParam = baseParams.length + 2;
+    const votersParams = [...baseParams, limit, offset];
+
     const votersQuery = await query(
         `SELECT p.id, g.first_name, g.last_name, g.document_id, g.voting_table_number, 
-                p.campaign_status, p.status_day_d, p.requests, p.notes,
+                p.campaign_status, p.status_day_d, p.has_voted, COALESCE(p.requests, '[]'::jsonb) as requests, p.notes,
                 p.has_financial_needs, p.financial_amount, p.financial_needs_fulfilled,
                 p.current_vote_intent
          FROM persons p
          JOIN global_citizens g ON p.citizen_id = g.id
          WHERE ${whereClause}
          ORDER BY g.last_name, g.first_name
-         LIMIT ${limit} OFFSET ${offset}`,
-        params
+         LIMIT $${limitParam} OFFSET $${offsetParam}`,
+        votersParams
     );
     
     // Total count for pagination
@@ -287,16 +527,16 @@ export async function getStationDashboard(campaignId: string, stationId: string,
          FROM persons p 
          JOIN global_citizens g ON p.citizen_id = g.id
          WHERE ${whereClause}`,
-        params
+        baseParams
     );
 
     // Process Flags & Details efficiently
     const processedVoters = votersQuery.rows.map(v => {
-        const reqs = v.requests || [];
+        const reqs = Array.isArray(v.requests) ? v.requests : [];
         
         // Parse LOGISTICS
         const logReq = reqs.find((r:any) => r.type === 'LOGISTICS');
-        const subtypes = logReq?.subtypes || [];
+        const subtypes = logReq?.subtypes || (logReq?.detail ? [logReq.detail] : []);
         const logResponsible = logReq?.responsible || null;
         const logStatus = logReq?.status || 'PENDING';
 
@@ -333,9 +573,12 @@ export async function getStationDashboard(campaignId: string, stationId: string,
     if (personIds.length > 0) {
         const checkinsRes = await query(
             `SELECT person_id FROM station_checkins 
-             WHERE station_id=$1 AND checkin_at::date = CURRENT_DATE 
+             WHERE station_id=$1 
+               AND campaign_id=$3
+               AND checkin_at >= CURRENT_DATE 
+               AND checkin_at < CURRENT_DATE + INTERVAL '1 day' 
              AND person_id = ANY($2::uuid[])`,
-            [stationId, personIds]
+            [stationId, personIds, campaignId]
         );
         checkinsRes.rows.forEach(row => {
             checkinsMap[row.person_id] = true;
@@ -349,6 +592,7 @@ export async function getStationDashboard(campaignId: string, stationId: string,
 
     return {
         collaborators: collaborators.rows,
+        users: assignedUsers.rows,
         stats: statsQuery.rows[0],
         voters: {
             data: finalVoters,

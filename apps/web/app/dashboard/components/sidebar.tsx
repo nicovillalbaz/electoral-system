@@ -25,6 +25,7 @@ const MENU_ITEMS = [
   { name: 'Padrón & Votantes', href: '/dashboard/persons', icon: Users },
   { name: 'Listas Inteligentes', icon: List, href: '/dashboard/lists' },
   { name: 'Control Día D', href: '/dashboard/voting', icon: Siren, className: 'text-emerald-500' }, // Destacado en Rojo
+  { name: 'Centro de Batalla', href: '/dashboard/control', icon: ShieldAlert },
   { name: 'Puestos (PC)', href: '/dashboard/stations', icon: MapPin },
   { name: 'Equipo & Accesos', href: '/dashboard/users', icon: UserCog },
   { name: 'Auditoría', href: '/dashboard/audit', icon: BarChart3 },

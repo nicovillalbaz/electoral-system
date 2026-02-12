@@ -11,48 +11,49 @@ export interface Notification {
 }
 
 export async function createNotification(data: {
+  campaignId: string;
   userId: string;
   message: string;
   type: "ACTIVITY_ASSIGNED" | "VOTER_ASSIGNED" | "OTHER";
   link?: string;
 }) {
   const sql = `
-    INSERT INTO notifications (user_id, message, type, link, is_read, created_at)
-    VALUES ($1, $2, $3, $4, false, NOW())
+    INSERT INTO notifications (campaign_id, user_id, message, type, link, is_read, created_at)
+    VALUES ($1, $2, $3, $4, $5, false, NOW())
     RETURNING *
   `;
-  const res = await query(sql, [data.userId, data.message, data.type, data.link]);
+  const res = await query(sql, [data.campaignId, data.userId, data.message, data.type, data.link]);
   return res.rows[0];
 }
 
-export async function getUnreadNotifications(userId: string) {
+export async function getUnreadNotifications(campaignId: string, userId: string) {
   const sql = `
     SELECT * FROM notifications 
-    WHERE user_id = $1 AND is_read = false
+    WHERE campaign_id = $1 AND user_id = $2 AND is_read = false
     ORDER BY created_at DESC
   `;
-  const res = await query(sql, [userId]);
+  const res = await query(sql, [campaignId, userId]);
   return res.rows;
 }
 
-export async function markNotificationAsRead(userId: string, notificationId: string) {
+export async function markNotificationAsRead(campaignId: string, userId: string, notificationId: string) {
   const sql = `
     UPDATE notifications 
     SET is_read = true 
-    WHERE id = $1 AND user_id = $2
+    WHERE id = $1 AND campaign_id = $2 AND user_id = $3
     RETURNING *
   `;
-  const res = await query(sql, [notificationId, userId]);
+  const res = await query(sql, [notificationId, campaignId, userId]);
   return res.rows[0];
 }
 
-export async function markAllNotificationsAsRead(userId: string) {
+export async function markAllNotificationsAsRead(campaignId: string, userId: string) {
     const sql = `
       UPDATE notifications 
       SET is_read = true 
-      WHERE user_id = $1
+      WHERE campaign_id = $1 AND user_id = $2
       RETURNING *
     `;
-    const res = await query(sql, [userId]);
+    const res = await query(sql, [campaignId, userId]);
     return res.rows;
   }

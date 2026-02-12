@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import api from '../../lib/api';
+import { ROLE_ICONS, ROLE_COLORS, ROLE_LABELS } from './components/teamRoleStyles';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend
 } from 'recharts';
@@ -10,31 +11,64 @@ export default function DashboardPage() {
   const [totals, setTotals] = useState<any>(null);
   const [voteIntent, setVoteIntent] = useState<any[]>([]);
   const [stationActivity, setStationActivity] = useState<any[]>([]);
+  const [teamStats, setTeamStats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0); // Para forzar re-render visual si hace falta
 
   // Polling inteligente cada 30 segundos
   useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
     const fetchData = async () => {
       try {
-        const [resTotals, resIntent, resActivity] = await Promise.all([
+        const [resTotals, resIntent, resActivity, resTeam] = await Promise.all([
           api.get('/dashboard/totals'),
           api.get('/dashboard/vote-intent'),
-          api.get('/dashboard/station-activity?limit=5')
+          api.get('/dashboard/station-activity?limit=5'),
+          api.get('/dashboard/team-stats')
         ]);
         setTotals(resTotals.data);
         setVoteIntent(resIntent.data);
         setStationActivity(resActivity.data);
+        setTeamStats(resTeam.data);
+        setError(null);
       } catch (error) {
         console.error("Error cargando dashboard", error);
+        setError("Error cargando datos. Intenta nuevamente.");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
-    const interval = setInterval(fetchData, 30000); 
-    return () => clearInterval(interval);
+    const startPolling = async () => {
+      await fetchData();
+      interval = setInterval(fetchData, 30000);
+    };
+
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        stopPolling();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    handleVisibility();
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [refreshKey]);
 
   // COLORES TÁCTICOS (Coinciden con tu DB V3.1)
@@ -55,6 +89,61 @@ export default function DashboardPage() {
     OPPOSITION_PARTY: 'Oposición (PLRA/Otros)',
     WONT_VOTE: 'No Vota'
   };
+
+  const normalizeRole = (role: string) => (role || 'OTRO').toUpperCase().replace(/\s+/g, '_');
+  const rolePriority = [
+    'CHOFER',
+    'PUNTERO',
+    'JEFE_PC',
+    'JEFE_DE_PC',
+    'JEFE',
+    'JEFE_CAMPAÑA',
+    'COORDINADOR',
+    'MESA_TESTIGO',
+    'LOGISTICA',
+    'SEGURIDAD',
+    'CAJA',
+    'OTRO'
+  ];
+
+  const roleCounts = teamStats.reduce((acc: Record<string, number>, item: any) => {
+    const role = normalizeRole(item.role);
+    acc[role] = (acc[role] || 0) + Number(item.count || 0);
+    return acc;
+  }, {});
+
+  const normalizedTeamStats = Object.entries(roleCounts).map(([role, count]) => ({
+    role,
+    count
+  })).sort((a, b) => {
+    const aIdx = rolePriority.indexOf(a.role);
+    const bIdx = rolePriority.indexOf(b.role);
+    if (aIdx != bIdx) {
+      return (aIdx == -1 ? rolePriority.length : aIdx) - (bIdx == -1 ? rolePriority.length : bIdx);
+    }
+    return b.count - a.count;
+  });
+
+  const formatRoleLabel = (role: string) => {
+    const label = ROLE_LABELS[role];
+    if (label) return label;
+    return role
+      .replace(/_/g, ' ')
+      .toLowerCase()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  const teamRolePills = normalizedTeamStats.map((stat) => {
+    const Icon = ROLE_ICONS[stat.role] || ROLE_ICONS.DEFAULT;
+    const colorClass = ROLE_COLORS[stat.role] || ROLE_COLORS.DEFAULT;
+    return {
+      role: stat.role,
+      label: formatRoleLabel(stat.role),
+      count: stat.count,
+      Icon,
+      colorClass
+    };
+  });
 
   if (loading) return (
     <div className="flex h-full items-center justify-center space-x-2 animate-pulse">
@@ -88,6 +177,11 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-200">
+          {error}
+        </div>
+      )}
 
       {/* KPI CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -118,6 +212,7 @@ export default function DashboardPage() {
           icon={AlertTriangle} 
           color="text-amber-500" 
         />
+        <TeamStatsCard items={teamRolePills} />
       </div>
 
       {/* SECCIÓN PRINCIPAL: GRÁFICOS */}
@@ -234,6 +329,36 @@ function KpiCard({ title, value, subValue, icon: Icon, color, border }: any) {
              </span>
              <span className="text-[10px] text-zinc-600">del total</span>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TeamStatsCard({ items }: any) {
+  return (
+    <div className="md:col-span-4 p-6 rounded-2xl border border-white/5 bg-zinc-900/40 hover:bg-zinc-900/60 transition-all">
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Equipo Operativo</h3>
+          <p className="text-xs text-zinc-600 mt-1">Distribucion por rol</p>
+        </div>
+        <div className="p-2 rounded-lg bg-black/20 text-blue-400">
+          <Users size={16} />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item: any) => (
+          <span
+            key={item.role}
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold max-w-full whitespace-normal ${item.colorClass}`}
+          >
+            <item.Icon className="h-3.5 w-3.5" />
+            {item.label}: {item.count}
+          </span>
+        ))}
+        {items.length === 0 && (
+          <span className="text-zinc-600 text-sm">Sin datos de equipo.</span>
         )}
       </div>
     </div>

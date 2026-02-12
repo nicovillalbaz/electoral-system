@@ -17,7 +17,7 @@ export default function TaskModal({ isOpen, onClose, onSuccess, taskToEdit }: Ta
 
   useEffect(() => {
       if(isOpen) {
-          api.get("/persons/addresses").then(res => setAvailableAddresses(res.data)).catch(console.error);
+          api.get("/persons/addresses").then(res => setAvailableAddresses(res.data)).catch(() => {});
           
           if (taskToEdit) {
               setFormData({
@@ -99,6 +99,10 @@ export default function TaskModal({ isOpen, onClose, onSuccess, taskToEdit }: Ta
                         <option value="CALL">Llamada</option>
                         <option value="EVENT">Evento</option>
                         <option value="LOGISTICS">Logística</option>
+                        <option value="FINANCIAL">Viático/Financiero</option>
+                        <option value="TRANSPORT">Transporte</option>
+                        <option value="FOOD">Alimentación</option>
+                        <option value="OTHER">Otro</option>
                     </select>
                 </div>
                 <div>

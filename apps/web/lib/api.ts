@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const api = axios.create({
   // CORRECCIÓN VITAL: Cambiamos el puerto de respaldo a 4000
-  baseURL: 'http://localhost:4000',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
 });
 
 api.interceptors.request.use((config) => {

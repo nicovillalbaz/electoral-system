@@ -31,7 +31,7 @@ export default function FinancialClosingModal({ isOpen, onClose, onSuccess, task
         setConcept("");
     } catch (e) {
         alert("Error al registrar cierre financiero");
-        console.error(e);
+        // error handled by alert above
     } finally {
         setLoading(false);
     }

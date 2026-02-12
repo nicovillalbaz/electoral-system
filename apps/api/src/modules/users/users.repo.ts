@@ -19,7 +19,7 @@ export async function userCreate(input: {
 
 export async function userList(campaignId: string) {
   const res = await query(
-    `SELECT id, campaign_id, email, full_name, role, operational_role, is_active, created_at
+    `SELECT id, campaign_id, email, full_name, role, operational_role, is_active, assigned_station_id, created_at
      FROM users
      WHERE campaign_id=$1
      ORDER BY created_at DESC`,
@@ -30,7 +30,7 @@ export async function userList(campaignId: string) {
 
 export async function userGetById(campaignId: string, id: string) {
   const res = await query(
-    `SELECT id, campaign_id, email, full_name, role, operational_role, is_active, created_at
+    `SELECT id, campaign_id, email, full_name, role, operational_role, is_active, assigned_station_id, created_at
      FROM users
      WHERE campaign_id=$1 AND id=$2`,
     [campaignId, id]
@@ -47,20 +47,48 @@ export async function userUpdate(
     fullName?: string; 
     operationalRole?: string;
     passwordHash?: string;
-    assignedStationId?: string;
+    assignedStationId?: string | null;
   }
 ) {
-  // COALESCE permite que si el valor es undefined, mantenga el valor actual de la base de datos
+  const updates: string[] = [];
+  const params: any[] = [campaignId, userId];
+  let paramIndex = 3;
+
+  if (data.isActive !== undefined) {
+    updates.push(`is_active = $${paramIndex++}`);
+    params.push(data.isActive);
+  }
+  if (data.role !== undefined) {
+    updates.push(`role = $${paramIndex++}`);
+    params.push(data.role);
+  }
+  if (data.fullName !== undefined) {
+    updates.push(`full_name = $${paramIndex++}`);
+    params.push(data.fullName);
+  }
+  if (data.operationalRole !== undefined) {
+    updates.push(`operational_role = $${paramIndex++}`);
+    params.push(data.operationalRole);
+  }
+  if (data.passwordHash !== undefined) {
+    updates.push(`password_hash = $${paramIndex++}`);
+    params.push(data.passwordHash);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "assignedStationId")) {
+    updates.push(`assigned_station_id = $${paramIndex++}`);
+    params.push(data.assignedStationId);
+  }
+
+  if (updates.length === 0) return userGetById(campaignId, userId);
+
+  updates.push(`updated_at = NOW()`);
+
   const res = await query(
     `UPDATE users
-         role = COALESCE($4, role),
-         full_name = COALESCE($5, full_name),
-         operational_role = COALESCE($6, operational_role),
-         password_hash = COALESCE($7, password_hash),
-         assigned_station_id = COALESCE($8, assigned_station_id)
+     SET ${updates.join(", ")}
      WHERE campaign_id=$1 AND id=$2
      RETURNING id, campaign_id, email, full_name, role, operational_role, is_active, assigned_station_id`,
-    [campaignId, userId, data.isActive, data.role, data.fullName, data.operationalRole, data.passwordHash, data.assignedStationId]
+    params
   );
   return res.rows[0];
 }

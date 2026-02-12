@@ -7,10 +7,8 @@ import {
   Plus, 
   Search, 
   CheckCircle2, 
-  Circle, 
   Clock, 
-  MapPin,
-  Filter
+  MapPin
 } from "lucide-react";
 import { 
   format, 
@@ -94,7 +92,7 @@ export default function ActivitiesPage() {
       const res = await api.get("/tasks", { params });
       setTasks(res.data.data || []);
     } catch (e) {
-      console.error(e);
+      // silently ignore load errors
     } finally {
       setLoading(false);
     }
@@ -140,6 +138,9 @@ export default function ActivitiesPage() {
           case "EVENT": return "🎉";
           case "LOGISTICS": return "🚚";
           case "FINANCIAL": return "💰";
+          case "TRANSPORT": return "🚗";
+          case "FOOD": return "🍽️";
+          case "OTHER": return "📋";
           default: return "📌";
       }
   };
@@ -290,6 +291,9 @@ export default function ActivitiesPage() {
                 <option value="EVENT">🎉 Evento</option>
                 <option value="LOGISTICS">🚚 Logística</option>
                 <option value="FINANCIAL">💰 Viático/Logística</option>
+                <option value="TRANSPORT">🚗 Transporte</option>
+                <option value="FOOD">🍽️ Alimentación</option>
+                <option value="OTHER">📋 Otro</option>
             </select>
 
             <div className="bg-black border border-zinc-800 rounded-lg p-1 flex">

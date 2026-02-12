@@ -3,10 +3,10 @@ import { query } from "../../db/query";
 export async function totals(campaignId: string) {
   const res = await query(
     `SELECT
-       COUNT(*)::int AS total_persons,
-       SUM(CASE WHEN has_voted THEN 1 ELSE 0 END)::int AS voted,
-       SUM(CASE WHEN NOT has_voted THEN 1 ELSE 0 END)::int AS missing,
-       SUM(CASE WHEN current_vote_intent = 'SURE' THEN 1 ELSE 0 END)::int AS sure_votes
+       COUNT(DISTINCT citizen_id)::int AS total_persons,
+       COUNT(DISTINCT CASE WHEN status_day_d = 'CHECKED_IN' THEN citizen_id END)::int AS voted,
+       COUNT(DISTINCT CASE WHEN status_day_d IS DISTINCT FROM 'CHECKED_IN' THEN citizen_id END)::int AS missing,
+       COUNT(DISTINCT CASE WHEN current_vote_intent = 'SURE' THEN citizen_id END)::int AS sure_votes
      FROM persons
      WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))`,
     [campaignId]
@@ -16,7 +16,7 @@ export async function totals(campaignId: string) {
 
 export async function voteIntentBreakdown(campaignId: string) {
   const res = await query(
-    `SELECT current_vote_intent as label, COUNT(*)::int AS value
+    `SELECT current_vote_intent as label, COUNT(DISTINCT citizen_id)::int AS value
      FROM persons
      WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))
      GROUP BY current_vote_intent
@@ -31,7 +31,7 @@ export async function missingByZone(campaignId: string, limit = 20) {
   const res = await query(
     `SELECT 
        COALESCE(z.name, 'Sin Zona') as label, 
-       COUNT(*)::int AS value
+       COUNT(DISTINCT p.citizen_id)::int AS value
      FROM persons p
      JOIN global_citizens g ON p.citizen_id = g.id
      LEFT JOIN polling_tables pt ON g.voting_table_id = pt.id
@@ -51,8 +51,8 @@ export async function performanceByZone(campaignId: string) {
   const res = await query(
     `SELECT 
        COALESCE(z.name, 'General') as label,
-       COUNT(*)::int as total,
-       SUM(CASE WHEN p.has_voted THEN 1 ELSE 0 END)::int as voted
+       COUNT(DISTINCT p.citizen_id)::int as total,
+       COUNT(DISTINCT CASE WHEN p.has_voted THEN p.citizen_id END)::int as voted
      FROM persons p
      JOIN global_citizens g ON p.citizen_id = g.id
      LEFT JOIN polling_tables pt ON g.voting_table_id = pt.id
@@ -82,6 +82,19 @@ export async function stationActivity(campaignId: string, hours = 24, limit = 20
      ORDER BY checkins DESC
      LIMIT $3`,
     [campaignId, hours, limit]
+  );
+  return res.rows;
+}
+
+export async function getTeamStats(campaignId: string) {
+  const res = await query(
+    `SELECT COALESCE(operational_role, 'OTRO') as role, COUNT(*)::int as count
+     FROM users
+     WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))
+       AND is_active = true
+     GROUP BY COALESCE(operational_role, 'OTRO')
+     ORDER BY count DESC`,
+    [campaignId]
   );
   return res.rows;
 }

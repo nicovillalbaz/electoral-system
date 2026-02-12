@@ -2,10 +2,7 @@ import { query, pool } from "../../db/query";
 import { logEvent } from "../events/events.repo";
 import { taskCreate } from "../tasks/tasks.repo";
 import { createNotification } from "../notifications/notifications.repo";
-// LISTAR TODO EL PADRÓN (Paginado + JOIN con Datos Reales)
-// apps/api/src/modules/persons/persons.repo.ts
 
-// En apps/api/src/modules/persons/persons.repo.ts
 
 export async function personsList(
   campaignId: string,
@@ -36,7 +33,7 @@ export async function personsList(
   const offset = (page - 1) * limit;
   const like = `%${q}%`;
 
-  const conditions = [`p.campaign_id = $1`];
+  const conditions = [`p.campaign_id = $1`, `p.deleted_at IS NULL`];
   const queryParams: any[] = [campaignId];
   let paramIndex = 2;
 
@@ -158,6 +155,9 @@ export async function personsList(
     case "party_affiliation":
       orderByClause = "g.party_affiliation";
       break;
+    case "phone_number":
+      orderByClause = "g.phone_number";
+      break;
     case "current_vote_intent":
       orderByClause = "p.current_vote_intent";
       break;
@@ -235,7 +235,7 @@ export async function personGet(campaignId: string, id: string) {
         p.requests, p.has_financial_needs, p.financial_needs_fulfilled, p.financial_amount
      FROM persons p 
      JOIN global_citizens g ON p.citizen_id = g.id 
-     WHERE p.campaign_id = $1 AND p.id = $2`,
+     WHERE p.campaign_id = $1 AND p.id = $2 AND p.deleted_at IS NULL`,
     [campaignId, id],
   );
 }
@@ -276,9 +276,34 @@ export async function personCreate(campaignId: string, data: any) {
     const citizenId = citizenRes.rows[0].id;
 
     // 2. Vincular a Campaña
+    const campaignStatus = data.campaignStatus || "NOT_VISITED";
+    const assignedStationId = data.assignedStationId || null;
+    const assignedUserId = data.assignedUserId || null;
+    const requests = Array.isArray(data.requests) ? JSON.stringify(data.requests) : "[]";
+    const hasFinancialNeeds = data.hasFinancialNeeds ?? false;
+    const financialNeedsFulfilled = data.financialNeedsFulfilled ?? false;
+    const financialAmount = data.financialAmount ?? 0;
+    const needsTransport = data.needsTransport ?? false;
+    const transportStatus = data.transportStatus || "PENDING";
+
     const personRes = await client.query(
-      `INSERT INTO persons (campaign_id, citizen_id, current_vote_intent, notes, created_at)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO persons (
+          campaign_id,
+          citizen_id,
+          current_vote_intent,
+          notes,
+          campaign_status,
+          assigned_station_id,
+          assigned_user_id,
+          requests,
+          has_financial_needs,
+          financial_needs_fulfilled,
+          financial_amount,
+          needs_transport,
+          transport_status,
+          created_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, NOW())
        ON CONFLICT (campaign_id, citizen_id) DO UPDATE SET updated_at = NOW()
        RETURNING id, campaign_id, current_vote_intent, notes`,
       [
@@ -286,6 +311,15 @@ export async function personCreate(campaignId: string, data: any) {
         citizenId,
         data.currentVoteIntent ?? "UNDECIDED",
         data.notes ?? null,
+        campaignStatus,
+        assignedStationId,
+        assignedUserId,
+        requests,
+        hasFinancialNeeds,
+        financialNeedsFulfilled,
+        financialAmount,
+        needsTransport,
+        transportStatus,
       ],
     );
 
@@ -306,9 +340,6 @@ export async function personCreate(campaignId: string, data: any) {
 }
 
 // ACTUALIZAR
-// ... imports ...
-// ACTUALIZAR
-// ... imports ...
 const sanitize = (val: any) => (val === "" || val === undefined ? null : val);
 export async function personUpdate(
   campaignId: string,
@@ -327,8 +358,8 @@ export async function personUpdate(
                 g.phone_number, g.address, g.location_place, g.first_name, g.last_name
          FROM persons p
          JOIN global_citizens g ON p.citizen_id = g.id
-         WHERE p.id = $1`,
-      [personId],
+         WHERE p.id = $1 AND p.campaign_id = $2 AND p.deleted_at IS NULL`,
+      [personId, campaignId],
     );
 
     if (currentRes.rows.length === 0) {
@@ -436,6 +467,7 @@ export async function personUpdate(
         // Notify
         if (patch.assignedUserId) {
             await createNotification({
+                campaignId: campaignId,
                 userId: patch.assignedUserId,
                 message: `Te han asignado a ${before.first_name} ${before.last_name} como responsable.`,
                 type: 'VOTER_ASSIGNED',
@@ -569,6 +601,7 @@ export async function personsGetUniqueAddresses(campaignId: string) {
     FROM persons p
     JOIN global_citizens g ON p.citizen_id = g.id
     WHERE p.campaign_id = $1 
+      AND p.deleted_at IS NULL
       AND g.address IS NOT NULL 
       AND length(g.address) > 2
     ORDER BY clean_zone ASC
@@ -604,7 +637,7 @@ export async function personsBulkUpdate(
     await client.query("BEGIN");
     
     // 1. Build Conditions (Duplicated from personsList)
-    const conditions = [`p.campaign_id = $1`];
+    const conditions = [`p.campaign_id = $1`, `p.deleted_at IS NULL`];
     const queryParams: any[] = [campaignId];
     let paramIndex = 2; // $1 is campaignId
 
@@ -669,7 +702,7 @@ export async function personsBulkUpdate(
       paramIndex++;
     }
 
-    if (filterParams.hasRequests === 'true') {
+    if (filterParams.hasRequests === 'true' || filterParams.hasRequests === true) {
         conditions.push(`jsonb_array_length(p.requests) > 0`);
     }
 

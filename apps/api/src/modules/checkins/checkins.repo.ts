@@ -21,6 +21,16 @@ export async function checkinCreate(input: {
       input.notes ?? null,
     ]
   );
+
+  await query(
+    `UPDATE persons 
+     SET status_day_d = 'CHECKED_IN',
+         station_checkin_at = NOW(),
+         updated_at = NOW()
+     WHERE id=$1 
+       AND (campaign_id=$2 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $2))`,
+    [input.personId, input.campaignId]
+  );
   return res.rows[0];
 }
 
@@ -29,7 +39,8 @@ export async function lastCheckinsForPerson(campaignId: string, personId: string
     `SELECT sc.*, s.name AS station_name
      FROM station_checkins sc
      JOIN stations s ON s.id = sc.station_id
-     WHERE sc.campaign_id=$1 AND sc.person_id=$2
+     WHERE (sc.campaign_id=$1 OR sc.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))
+       AND sc.person_id=$2
      ORDER BY sc.checkin_at DESC
      LIMIT 10`,
     [campaignId, personId]

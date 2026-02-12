@@ -2,7 +2,6 @@
 export const VOTE_INTENT_OPTIONS = [
   "SURE", 
   "PROBABLE", 
-  "OPPOSITION", 
   "OPPOSITION_INTERNAL", 
   "OPPOSITION_PARTY", 
   "WONT_VOTE", 
@@ -14,7 +13,16 @@ export const CAMPAIGN_STATUS_OPTIONS = [
   "TO_VISIT", 
   "CONTACTED", 
   "VISITED", 
-  "VISITED_PC"
+  "VISITED_PC",
+  "DO_NOT_DISTURB",
+  // Day D / Extended statuses (match DB CHECK constraint)
+  "PENDING",
+  "NEW",
+  "CALLED",
+  "SCANNED",
+  "NOT_FOUND",
+  "CHECKED_IN",
+  "REJECTED"
 ] as const;
 
 export const TRANSPORT_STATUS_OPTIONS = [

@@ -23,7 +23,7 @@ export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterCon
     // --- UNIFIED LOCAL STATE ---
     // We initialize ONCE from props.
     const [form, setForm] = useState({
-        status_day_d: voter.status_day_d || 'NOT_VOTED',
+        status_day_d: voter.status_day_d || 'PENDING',
         current_vote_intent: voter.current_vote_intent || 'UNDECIDED',
         assigned_station_id: voter.assigned_station_id || "",
         passed_pc: (voter.campaign_status === 'VISITED_PC' || !!voter.station_checkin_at),
@@ -253,7 +253,8 @@ export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterCon
                         <option value="SURE">VOTO SEGURO 🟢</option>
                         <option value="PROBABLE">PROBABLE 🟡</option>
                         <option value="UNDECIDED">INDECISO ⚪</option>
-                        <option value="OPPOSITION">OPOSICIÓN 🔴</option>
+                        <option value="OPPOSITION_INTERNAL">OPOSICIÓN (INTERNA) 🔴</option>
+                        <option value="OPPOSITION_PARTY">OPOSICIÓN (OTRO PARTIDO) 🔴</option>
                      </select>
                 </div>
 

@@ -8,6 +8,7 @@ import { Users, Truck, AlertTriangle, CheckCircle, Search, Plus, Trash2, Fuel, S
 // --- TYPES ---
 type DashboardData = {
     collaborators: any[];
+    users?: any[];
     stats: {
         total_assigned: number;
         total_visited_pc: number;
@@ -96,6 +97,25 @@ export default function StationDashboardPage() {
                             </div>
                         ))}
                     </div>
+
+                    <div className="mt-4 pt-4 border-t border-zinc-800">
+                        <h3 className="text-xs font-bold text-zinc-400 uppercase mb-2">Usuarios Asignados</h3>
+                        <div className="space-y-2">
+                            {(!data.users || data.users.length === 0) && (
+                                <div className="text-zinc-600 text-xs italic">Sin usuarios asignados.</div>
+                            )}
+                            {data.users?.map((u: any) => (
+                                <div key={u.id} className="flex justify-between items-center p-2 bg-zinc-950/50 rounded border border-zinc-800/50">
+                                    <div>
+                                        <div className="font-bold text-sm text-zinc-200">{u.full_name}</div>
+                                        <div className="text-[10px] text-zinc-500 font-mono">
+                                            {u.role}{u.operational_role ? ` · ${u.operational_role}` : ""}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
 
                 {/* RIGHT COL: VOTER AUDIT GRID - FULL WIDTH */}
@@ -144,7 +164,7 @@ export default function StationDashboardPage() {
                                            <IntentionBadge intent={v.current_vote_intent} />
                                         </td>
                                         <td className="p-3 text-center">
-                                            <StatusBadge status={v.campaign_status} />
+                                            <StatusBadge status={v.campaign_status} visitedPc={v.visited_pc} />
                                         </td>
                                         <td className="p-3">
                                             {v.logistics.has_needs ? (
@@ -238,17 +258,31 @@ function StatCard({ label, value, icon }: any) {
     );
 }
 
-function StatusBadge({ status }: { status: string }) {
-    if (status === 'VISITED_PC') return <span className="bg-emerald-900/20 text-emerald-400 border border-emerald-900/50 px-2 py-0.5 rounded text-[9px] font-bold shadow-[0_0_8px_rgba(16,185,129,0.2)]">PASÓ POR PC</span>;
-    if (status === 'PENDING') return <span className="text-zinc-700 bg-zinc-900/50 border border-zinc-800 px-2 py-0.5 rounded text-[9px]">PENDIENTE</span>;
-    return <span className="text-zinc-500 text-[9px]">{status}</span>;
+function StatusBadge({ status, visitedPc }: { status?: string; visitedPc?: boolean }) {
+    if (visitedPc || status === 'VISITED_PC') return <span className="bg-emerald-900/20 text-emerald-400 border border-emerald-900/50 px-2 py-0.5 rounded text-[9px] font-bold shadow-[0_0_8px_rgba(16,185,129,0.2)]">PAS? POR PC</span>;
+    switch (status) {
+        case 'DO_NOT_DISTURB':
+            return <span className="bg-red-900/20 text-red-400 border border-red-900/50 px-2 py-0.5 rounded text-[9px] font-bold">NO MOLESTAR</span>;
+        case 'VISITED':
+            return <span className="bg-blue-900/20 text-blue-400 border border-blue-900/50 px-2 py-0.5 rounded text-[9px] font-bold">VISITADO</span>;
+        case 'CONTACTED':
+            return <span className="bg-amber-900/20 text-amber-400 border border-amber-900/50 px-2 py-0.5 rounded text-[9px] font-bold">CONTACTADO</span>;
+        case 'TO_VISIT':
+            return <span className="bg-zinc-900/50 text-zinc-300 border border-zinc-800 px-2 py-0.5 rounded text-[9px]">POR VISITAR</span>;
+        case 'NOT_VISITED':
+            return <span className="bg-zinc-900/50 text-zinc-500 border border-zinc-800 px-2 py-0.5 rounded text-[9px]">NO VISITADO</span>;
+        default:
+            return <span className="text-zinc-500 text-[9px]">{status || '-'}</span>;
+    }
 }
 
-function IntentionBadge({ intent }: { intent: string }) {
-    if (intent === 'SURE') return <span className="text-emerald-500 text-lg" title="Seguro">🟢</span>;
-    if (intent === 'PROBABLE') return <span className="text-yellow-500 text-lg" title="Probable">🟡</span>;
-    if (intent === 'UNDECIDED') return <span className="text-zinc-500 text-lg" title="Indeciso">⚪</span>;
-    if (intent === 'OPPOSITION') return <span className="text-red-500 text-lg" title="Oposición">🔴</span>;
+function IntentionBadge({ intent }: { intent?: string }) {
+    if (intent === 'SURE') return <span className="text-emerald-500 text-lg" title="Seguro">??</span>;
+    if (intent === 'PROBABLE') return <span className="text-yellow-500 text-lg" title="Probable">??</span>;
+    if (intent === 'UNDECIDED') return <span className="text-zinc-500 text-lg" title="Indeciso">?</span>;
+    if (intent === 'OPPOSITION_INTERNAL') return <span className="text-red-500 text-lg" title="Oposici?n Interna">??</span>;
+    if (intent === 'OPPOSITION_PARTY') return <span className="text-red-700 text-lg" title="Oposici?n Partido">??</span>;
+    if (intent === 'WONT_VOTE') return <span className="text-zinc-700 text-lg" title="No vota">?</span>;
     return <span className="text-zinc-700 text-lg">-</span>;
 }
 

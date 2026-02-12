@@ -61,6 +61,10 @@ export async function authRoutes(app: FastifyInstance) {
 
   // Endpoint Bootstrap (Solo para crear la primera cuenta)
   app.post("/bootstrap", async (req, reply) => {
+    if (process.env.ALLOW_BOOTSTRAP !== "true") {
+      return reply.status(403).send({ error: "Bootstrap disabled" });
+    }
+
     const body = z.object({
       campaignName: z.string().min(2),
       adminEmail: z.string().email(),

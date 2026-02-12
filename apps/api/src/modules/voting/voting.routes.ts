@@ -111,8 +111,8 @@ export async function votingRoutes(app: FastifyInstance) {
    });
 
    // 5. Check Collision
-   app.get("/check-collision/:citizenId", { preHandler: [app.requireAuth] }, async (req: any) => {
+  app.get("/check-collision/:citizenId", { preHandler: [app.requireAuth] }, async (req: any) => {
       const { citizenId } = z.object({ citizenId: z.string().uuid() }).parse(req.params);
-      return checkCollision(citizenId);
+      return checkCollision(req.user.campaignId, citizenId);
    });
 }

@@ -39,24 +39,26 @@ export default function TeamMemberModal({ isOpen, onClose, onConfirm }: TeamMemb
       setLoadingSearch(true);
       try {
         // Use Grid search for now, assuming it searches by Doc ID
-        const res = await fetch(`/api/voting/grid?query=${encodeURIComponent(documentId)}&limit=1`);
+        const res = await fetch(`/api/voting/grid?query=${encodeURIComponent(documentId)}&limit=5`);
         if (res.ok) {
           const data = await res.json();
-          if (data && data.length > 0) {
-              const p = data[0];
-              // Check exact match to be sure
-              if (p.document_id.includes(documentId)) {
+          if (Array.isArray(data) && data.length > 0) {
+              const exact = data.find((row: any) => row.document_id === documentId);
+              if (exact) {
                   setIsFound(true);
                   
                   // LOGIC: Is data complete?
-                  const dbFirst = p.first_name || "";
-                  const dbLast = p.last_name || "";
+                  const dbFirst = exact.first_name || "";
+                  const dbLast = exact.last_name || "";
                   const isComplete = dbFirst.trim().length > 1 && dbLast.trim().length > 1 && dbFirst !== 'NN' && dbLast !== 'NN';
                   
                   setFirstName(dbFirst);
                   setLastName(dbLast);
                   
                   setCanEditName(!isComplete); // Lock if complete, Unlock if incomplete
+              } else {
+                  setIsFound(false);
+                  setCanEditName(true);
               }
           } else {
               setIsFound(false);

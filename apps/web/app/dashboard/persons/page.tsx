@@ -50,7 +50,7 @@ export default function PersonsPage() {
         const resTags = await api.get("/tags");
         setAvailableTags(resTags.data);
       } catch (e) {
-        console.error("Error cargando datos maestros", e);
+        // silently ignore master data load errors
       }
     };
     fetchMasterData();
@@ -104,7 +104,7 @@ export default function PersonsPage() {
           setPersons(Array.isArray(res.data) ? res.data : []);
       }
     } catch (e) {
-      console.error(e);
+      // silently ignore load errors
     } finally {
       setLoading(false);
     }
@@ -205,9 +205,6 @@ export default function PersonsPage() {
         <button onClick={() => setShowFilterModal(true)} className="bg-zinc-900 border border-zinc-800 text-zinc-400 px-4 rounded-xl hover:text-white hover:border-zinc-600 transition-colors flex items-center gap-2">
             <SlidersHorizontal size={20} /> <span className="hidden md:inline">Filtros</span>
         </button>
-        <button onClick={() => setShowFilterModal(true)} className="bg-zinc-900 border border-zinc-800 text-zinc-400 px-4 rounded-xl hover:text-white hover:border-zinc-600 transition-colors flex items-center gap-2">
-            <SlidersHorizontal size={20} /> <span className="hidden md:inline">Filtros</span>
-        </button>
       </div>
 
       {/* TABLA */}
@@ -261,25 +258,20 @@ export default function PersonsPage() {
         onClose={() => setShowPersonModal(false)} 
         onSuccess={loadPersons} 
         personToEdit={personToEdit} 
-        availableAddresses={availableAddresses} // <--- ¡CONECTADO!
+        availableAddresses={availableAddresses}
+        availableTags={availableTags}
       />
       
-      return (
-    
       <FilterModal 
         isOpen={showFilterModal} 
         onClose={() => setShowFilterModal(false)}
         onApply={(filters) => { 
-            setActiveFilters(filters); // <--- ESTO DISPARA EL RECARGAR
-            setPage(1); // Volver a pag 1 al filtrar
+            setActiveFilters(filters);
+            setPage(1);
         }}
         availableAddresses={availableAddresses} 
         availableTags={availableTags}
       />
-      
-
-    
-  )
 
     </div>
   );

@@ -16,7 +16,7 @@ export default function UsersPage() {
   // Formulario nuevo/editar usuario
   const [formData, setFormData] = useState({
     email: '',
-    full_name: '',
+    fullName: '',
     password: '',
     role: 'OPERATOR',
     operationalRole: 'OTRO',
@@ -53,7 +53,7 @@ export default function UsersPage() {
       if (editMode && selectedUser) {
           // UPDATE
           const payload: any = {
-              fullName: formData.full_name,
+              fullName: formData.fullName,
               role: formData.role,
               operationalRole: formData.operationalRole,
               assignedStationId: formData.assignedStationId || null
@@ -63,7 +63,14 @@ export default function UsersPage() {
           await api.patch(`/users/${selectedUser.id}`, payload);
       } else {
           // CREATE
-          await api.post('/users', formData);
+          const payload: any = {
+            email: formData.email,
+            password: formData.password,
+            fullName: formData.fullName,
+            role: formData.role,
+            operationalRole: formData.operationalRole,
+          };
+          await api.post('/users', payload);
       }
       
       setShowModal(false);
@@ -75,7 +82,7 @@ export default function UsersPage() {
   };
 
   const resetForm = () => {
-      setFormData({ email: '', full_name: '', password: '', role: 'OPERATOR', operationalRole: 'OTRO', assignedStationId: '' });
+      setFormData({ email: '', fullName: '', password: '', role: 'OPERATOR', operationalRole: 'OTRO', assignedStationId: '' });
       setEditMode(false);
       setSelectedUser(null);
   }
@@ -84,7 +91,7 @@ export default function UsersPage() {
       setSelectedUser(user);
       setFormData({
           email: user.email,
-          full_name: user.full_name,
+          fullName: user.full_name ?? user.fullName ?? '',
           password: '', // Always empty on edit
           role: user.role,
           operationalRole: user.operational_role || 'OTRO',
@@ -139,7 +146,7 @@ export default function UsersPage() {
             </div>
             
             <div>
-              <h3 className="text-lg font-bold text-white">{u.full_name}</h3>
+              <h3 className="text-lg font-bold text-white">{u.full_name || u.fullName}</h3>
               <p className="text-sm text-zinc-500 font-mono">{u.email}</p>
               {u.assigned_station_id && (
                   <div className="mt-2 text-[10px] bg-zinc-800 px-2 py-1 rounded w-fit text-zinc-300">
@@ -171,7 +178,7 @@ export default function UsersPage() {
                 <label className="block text-xs font-bold text-zinc-400 mb-1">NOMBRE COMPLETO</label>
                 <input 
                   className="w-full bg-black border border-zinc-700 rounded p-3 text-white focus:border-white outline-none" 
-                  value={formData.full_name} onChange={e => setFormData({...formData, full_name: e.target.value})} required 
+                  value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} required 
                 />
               </div>
               <div>
@@ -211,7 +218,7 @@ export default function UsersPage() {
                   value={formData.operationalRole} onChange={e => setFormData({...formData, operationalRole: e.target.value})}
                 >
                   <option value="JEFE_CAMPAÑA">JEFE DE CAMPAÑA</option>
-                  <option value="COORDINATOR">COORDINADOR</option>
+                  <option value="COORDINADOR">COORDINADOR</option>
                   <option value="PUNTERO">PUNTERO / LÍDER</option>
                   <option value="CHOFER">CHOFER</option>
                   <option value="MESA_TESTIGO">MESA TESTIGO</option>
@@ -226,7 +233,7 @@ export default function UsersPage() {
                   value={formData.assignedStationId} onChange={e => setFormData({...formData, assignedStationId: e.target.value})}
                 >
                   <option value="">-- SIN ASIGNAR --</option>
-                  {stations.map(s => <option key={s.id} value={s.id}>{s.name} ({s.location})</option>)}
+                  {stations.map(s => <option key={s.id} value={s.id}>{s.name} ({s.address || 'Sin dirección'})</option>)}
                 </select>
               </div>
 

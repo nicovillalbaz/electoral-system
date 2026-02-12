@@ -73,7 +73,7 @@ export async function usersRoutes(app: FastifyInstance) {
         fullName: body.fullName,
         operationalRole: body.operationalRole,
         passwordHash,
-        assignedStationId: body.assignedStationId === null ? undefined : body.assignedStationId // Handle nullable
+        assignedStationId: body.assignedStationId
       });
 
       if (!updated) throw notFound("User not found");

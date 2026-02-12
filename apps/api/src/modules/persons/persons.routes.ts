@@ -31,20 +31,38 @@ export async function personsRoutes(app: FastifyInstance) {
               updates: z.record(z.string(), z.any()), // New: updates object
           }).parse(req.body);
 
+          const filterCriteria = body.filterCriteria;
+          if (!filterCriteria || (typeof filterCriteria === "object" && !Array.isArray(filterCriteria) && Object.keys(filterCriteria).length === 0)) {
+              return reply.code(400).send({ error: "filterCriteria cannot be empty" });
+          }
+
           const campaignId = req.user.campaignId;
           const actorUserId = req.user.userId;
 
           const start = Date.now();
-          const result = await personsBulkUpdate(campaignId, body.filterCriteria, body.updates, actorUserId);
-          console.log(`[BULK] Updated in ${Date.now() - start}ms`);
+          const result = await personsBulkUpdate(campaignId, filterCriteria, body.updates, actorUserId);
+          req.log.info({ durationMs: Date.now() - start }, "[BULK] Updated");
 
           return result;
       } catch (error: any) {
-          console.error(error);
+          req.log.error(error);
           reply.code(500).send({ error: error.message });
       }
   });
   app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
+    const raw = req.query ?? {};
+    const normalized: any = { ...raw };
+    if (normalized.campaign_status && !normalized.campaignStatus) {
+      normalized.campaignStatus = normalized.campaign_status;
+    }
+    if (normalized.hasVoted && !normalized.votedStatus) {
+      if (normalized.hasVoted === "true" || normalized.hasVoted === true) {
+        normalized.votedStatus = "VOTED";
+      } else if (normalized.hasVoted === "false" || normalized.hasVoted === false) {
+        normalized.votedStatus = "PENDING";
+      }
+    }
+
     // 1. Validamos todos los filtros entrantes
     const queryZ = z
       .object({
@@ -67,7 +85,7 @@ export async function personsRoutes(app: FastifyInstance) {
         hasFinancialNeeds: z.string().optional(), 
         financialNeedsFulfilled: z.string().optional(), 
       })
-      .parse(req.query);
+      .parse(normalized);
 
     // 2. Ejecutamos la consulta limpia
     const campaignId = req.user.campaignId;
@@ -116,6 +134,8 @@ export async function personsRoutes(app: FastifyInstance) {
           lastName: z.string().min(1),
           phoneNumber: z.string().optional(),
           address: z.string().optional(),
+          exactAddress: z.string().optional(),
+          whatsappNumber: z.string().optional(),
           department: z.string().optional(),
           district: z.string().optional(),
           pollingPlace: z.string().optional(),
@@ -126,7 +146,6 @@ export async function personsRoutes(app: FastifyInstance) {
             .enum([
               "SURE",
               "PROBABLE",
-              "OPPOSITION",
               "OPPOSITION_INTERNAL",
               "OPPOSITION_PARTY",
               "WONT_VOTE",
@@ -134,6 +153,15 @@ export async function personsRoutes(app: FastifyInstance) {
             ])
             .optional(),
           notes: z.string().optional(),
+          campaignStatus: z.string().optional(),
+          assignedStationId: z.string().uuid().optional().nullable(),
+          assignedUserId: z.string().uuid().optional().nullable(),
+          requests: z.array(z.any()).optional(),
+          hasFinancialNeeds: z.boolean().optional(),
+          financialNeedsFulfilled: z.boolean().optional(),
+          financialAmount: z.number().optional(),
+          needsTransport: z.boolean().optional(),
+          transportStatus: z.string().optional(),
         })
         .parse(req.body);
 
@@ -161,6 +189,8 @@ export async function personsRoutes(app: FastifyInstance) {
           lastName: z.string().optional(),
           phoneNumber: z.string().optional(),
           address: z.string().optional(),
+          exactAddress: z.string().optional(),
+          whatsappNumber: z.string().optional(),
 
           department: z.string().optional(),
           district: z.string().optional(),
@@ -198,7 +228,9 @@ export async function personsRoutes(app: FastifyInstance) {
           requests: z.array(z.any()).optional(), // FIXED: Allow objects
           hasFinancialNeeds: z.boolean().optional(),
           financialNeedsFulfilled: z.boolean().optional(),
-          financialAmount: z.number().optional()
+          financialAmount: z.number().optional(),
+          assignedStationId: z.string().uuid().optional().nullable(),
+          assignedUserId: z.string().uuid().optional().nullable(),
         })
         .parse(req.body);
 
