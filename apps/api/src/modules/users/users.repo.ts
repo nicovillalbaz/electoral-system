@@ -21,7 +21,7 @@ export async function userList(campaignId: string) {
   const res = await query(
     `SELECT id, campaign_id, email, full_name, role, operational_role, is_active, assigned_station_id, created_at
      FROM users
-     WHERE campaign_id=$1
+     WHERE campaign_id=$1 AND deleted_at IS NULL
      ORDER BY created_at DESC`,
     [campaignId]
   );
@@ -32,7 +32,7 @@ export async function userGetById(campaignId: string, id: string) {
   const res = await query(
     `SELECT id, campaign_id, email, full_name, role, operational_role, is_active, assigned_station_id, created_at
      FROM users
-     WHERE campaign_id=$1 AND id=$2`,
+     WHERE campaign_id=$1 AND id=$2 AND deleted_at IS NULL`,
     [campaignId, id]
   );
   return res.rows[0] ?? null;
@@ -86,7 +86,7 @@ export async function userUpdate(
   const res = await query(
     `UPDATE users
      SET ${updates.join(", ")}
-     WHERE campaign_id=$1 AND id=$2
+     WHERE campaign_id=$1 AND id=$2 AND deleted_at IS NULL
      RETURNING id, campaign_id, email, full_name, role, operational_role, is_active, assigned_station_id`,
     params
   );

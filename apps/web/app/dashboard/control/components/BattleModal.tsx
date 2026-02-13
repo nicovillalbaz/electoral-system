@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { X, Check, Car, DollarSign, MapPin, Loader2 } from "lucide-react";
 
@@ -35,11 +35,11 @@ export default function BattleModal({ person, onClose, onUpdate }: BattleModalPr
   const [assignedUserId, setAssignedUserId] = useState<string>("");
 
   // Load Users for Assignment
-  useState(() => {
+  useEffect(() => {
       fetch('/api/users?limit=100').then(res => res.json()).then(data => {
           setUsers(data.data || []);
       }).catch(err => console.error("Failed to load users", err));
-  });
+  }, []);
 
   const [transportAddress, setTransportAddress] = useState(person.address || "");
   const [showTransportInput, setShowTransportInput] = useState(false);

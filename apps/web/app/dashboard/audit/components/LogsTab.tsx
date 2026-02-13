@@ -1,16 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RefreshCw, Undo2 } from "lucide-react";
+import { RefreshCw, Undo2, Filter } from "lucide-react";
 
 interface LogsTabProps {
   stationId: string;
 }
 
+const EVENT_CATEGORIES: Record<string, { label: string; types: string[] }> = {
+  ALL: { label: "Todos", types: [] },
+  VOTES: { label: "🗳️ Votos", types: ["PERSON_MARKED_VOTED", "DAY_D_STATUS_CHANGED"] },
+  USERS: { label: "👤 Usuarios", types: ["USER_CREATED", "USER_UPDATED", "USER_PASSWORD_CHANGE", "ADMIN_RESET_PASSWORD"] },
+  STATIONS: { label: "🏢 Estaciones", types: ["STATION_CREATED", "STATION_UPDATED", "STATION_CHECKIN_CREATED"] },
+  LOGISTICS: { label: "🚚 Logística", types: ["TRANSPORT_REQUESTED", "FINANCIAL_REQUESTED"] },
+  CONTACTS: { label: "📞 Contactos", types: ["PERSON_CONTACTED", "PERSON_UPDATED"] },
+  TAGS: { label: "🏷️ Etiquetas", types: ["TAG_ASSIGNED", "TAG_REMOVED"] },
+  INCIDENTS: { label: "⚠️ Incidentes", types: ["INCIDENT_REPORT"] },
+};
+
 export default function LogsTab({ stationId }: LogsTabProps) {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [revertingId, setRevertingId] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState("ALL");
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -63,31 +75,71 @@ export default function LogsTab({ stationId }: LogsTabProps) {
     }
   };
 
+  // Filter logs by selected category
+  const filteredLogs = categoryFilter === "ALL"
+    ? logs
+    : logs.filter((log) => {
+        const cat = EVENT_CATEGORIES[categoryFilter];
+        return cat && cat.types.includes(log.event_type);
+      });
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-3">
         <div>
           <h3 className="text-xl font-bold text-white">Log Detallado</h3>
           <p className="text-zinc-500 text-sm">Últimos eventos del PC</p>
         </div>
-        <button
-          onClick={fetchLogs}
-          className="flex items-center gap-2 text-xs text-zinc-400 hover:text-white"
-        >
-          <RefreshCw size={12} /> Actualizar
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Category Filter */}
+          <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5">
+            <Filter size={12} className="text-zinc-500" />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="bg-transparent text-sm text-zinc-300 outline-none cursor-pointer"
+            >
+              {Object.entries(EVENT_CATEGORIES).map(([key, { label }]) => (
+                <option key={key} value={key} className="bg-zinc-900 text-zinc-300">
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={fetchLogs}
+            className="flex items-center gap-2 text-xs text-zinc-400 hover:text-white"
+          >
+            <RefreshCw size={12} /> Actualizar
+          </button>
+        </div>
       </div>
+
+      {/* Active filter indicator */}
+      {categoryFilter !== "ALL" && (
+        <div className="flex items-center gap-2 text-xs text-zinc-400">
+          <span>Filtro activo: <strong className="text-white">{EVENT_CATEGORIES[categoryFilter]?.label}</strong></span>
+          <span>({filteredLogs.length} de {logs.length} eventos)</span>
+          <button
+            onClick={() => setCategoryFilter("ALL")}
+            className="text-blue-400 hover:text-blue-300 underline"
+          >
+            Limpiar
+          </button>
+        </div>
+      )}
 
       {loading && (
         <div className="text-zinc-500 text-sm">Cargando logs...</div>
       )}
 
-      {!loading && logs.length === 0 && (
-        <div className="text-zinc-600 text-sm">No hay eventos aún.</div>
+      {!loading && filteredLogs.length === 0 && (
+        <div className="text-zinc-600 text-sm">No hay eventos{categoryFilter !== "ALL" ? " en esta categoría" : " aún"}.</div>
       )}
 
       <div className="space-y-3">
-        {logs.map((log) => (
+        {filteredLogs.map((log) => (
           <div key={log.id} className="border border-zinc-800 bg-zinc-900/50 rounded-xl p-4">
             <div className="flex justify-between items-start gap-4">
               <div>

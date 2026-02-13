@@ -105,8 +105,10 @@ export default function UsersPage() {
   const ROLES: any = {
     ADMIN: { label: 'ADMINISTRADOR', classes: 'bg-red-900/50 text-red-200 border-red-800' },
     COORDINATOR: { label: 'COORDINADOR', classes: 'bg-orange-900/50 text-orange-200 border-orange-800' },
+    STATION_MANAGER: { label: 'JEFE DE PC', classes: 'bg-purple-900/30 text-purple-400 border-purple-900/50' },
     OPERATOR: { label: 'OPERADOR PUESTO', classes: 'bg-blue-900/50 text-blue-200 border-blue-800' },
     VOLUNTEER: { label: 'VOLUNTARIO', classes: 'bg-zinc-800 text-zinc-400 border-zinc-700' },
+    VIEWER: { label: 'OBSERVADOR', classes: 'bg-zinc-800 text-zinc-500 border-zinc-700' },
   };
 
   return (
@@ -142,7 +144,7 @@ export default function UsersPage() {
                     {u.operational_role.replace('_', ' ')}
                 </div>
               )}
-              <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+              <div className={`h-2 w-2 rounded-full ${u.is_active ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]'}`}></div>
             </div>
             
             <div>
@@ -167,7 +169,7 @@ export default function UsersPage() {
       {/* MODAL CREAR USUARIO */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-zinc-900 border border-zinc-700 w-full max-w-md rounded-xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-700 w-full max-w-2xl rounded-xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-white">{editMode ? 'Editar Usuario' : 'Alta de Operador'}</h2>
               <button onClick={() => setShowModal(false)} className="text-zinc-500 hover:text-white"><X /></button>
@@ -208,6 +210,7 @@ export default function UsersPage() {
                   <option value="COORDINATOR">COORDINADOR (Zona)</option>
                   <option value="ADMIN">ADMINISTRADOR (Total)</option>
                   <option value="VOLUNTEER">VOLUNTARIO</option>
+                  <option value="VIEWER">OBSERVADOR</option>
                 </select>
               </div>
 

@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import useSWR from "swr"; // Assuming SWR is used or React Query. Checking imports.
 // Fallback to fetch or safeApi if no SWR.
 import safeApi from "../../../../../lib/api"; 
 import { Users, Truck, AlertTriangle, CheckCircle, Search, Plus, Trash2, Fuel, Sandwich, Bus } from "lucide-react";
 
-import TeamMemberModal from "./TeamMemberModal"; // Local Component
+import TeamMemberModal from "../../../audit/components/TeamMemberModal"; // Fixed path
 
 // --- TYPES ---
 type DashboardData = {
@@ -57,7 +57,7 @@ export default function StationDashboardPage() {
 
     // Initial Fetch & Poll?
     // Using useEffect for now.
-    const useEffect = require("react").useEffect; 
+
     useEffect(() => {
         fetchData();
     }, [stationId, page, search]); // Re-fetch on params change

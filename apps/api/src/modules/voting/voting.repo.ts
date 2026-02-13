@@ -32,7 +32,7 @@ export async function markVoted(input: {
   // 2) reflejamos estado actual en persons (Allows Parent to mark Child's person)
   const res = await query(
     `UPDATE persons
-     SET has_voted=true, updated_at=now()
+     SET has_voted=true, status_day_d='VOTED', updated_at=now()
      WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) 
        AND id=$2
      RETURNING *`,
@@ -259,7 +259,9 @@ export async function updateDayDStatus(
         // Update person (Hierarchy Support)
         const updateSql = `
             UPDATE persons 
-            SET status_day_d = $1, updated_at = NOW()
+            SET status_day_d = $1,
+                has_voted = CASE WHEN $1 = 'VOTED' THEN true ELSE has_voted END,
+                updated_at = NOW()
             WHERE id = $2 
               AND (campaign_id = $3 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $3))
             RETURNING id, status_day_d

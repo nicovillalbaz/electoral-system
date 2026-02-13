@@ -4,6 +4,7 @@ import { requireRole } from "../../common/middleware/role";
 import { hashPassword } from "../../common/security/password";
 import { notFound } from "../../common/http/errors";
 import { userCreate, userGetById, userList, userUpdate } from "./users.repo";
+import { logEvent } from "../events/events.repo";
 
 export async function usersRoutes(app: FastifyInstance) {
   
@@ -39,14 +40,23 @@ export async function usersRoutes(app: FastifyInstance) {
 
     const passwordHash = await hashPassword(body.password);
     
-    return userCreate({
+    const newUser = await userCreate({
       campaignId: req.user.campaignId,
       email: body.email.toLowerCase(),
       passwordHash,
-      fullName: finalName, // Usamos el nombre ya procesado
+      fullName: finalName,
       role: body.role,
       operationalRole: body.operationalRole,
     });
+
+    await logEvent({
+      campaignId: req.user.campaignId,
+      eventType: "USER_CREATED",
+      actorUserId: req.user.userId,
+      payload: { email: body.email.toLowerCase(), role: body.role, fullName: finalName },
+    });
+
+    return newUser;
   });
 
   // 4. ACTUALIZAR USUARIO
@@ -77,6 +87,23 @@ export async function usersRoutes(app: FastifyInstance) {
       });
 
       if (!updated) throw notFound("User not found");
+
+      await logEvent({
+        campaignId: req.user.campaignId,
+        eventType: "USER_UPDATED",
+        actorUserId: req.user.userId,
+        payload: {
+          targetUserId: params.id,
+          changes: {
+            ...(body.role && { role: body.role }),
+            ...(body.isActive !== undefined && { isActive: body.isActive }),
+            ...(body.fullName && { fullName: body.fullName }),
+            ...(body.password && { passwordChanged: true }),
+            ...(body.assignedStationId !== undefined && { assignedStationId: body.assignedStationId }),
+          },
+        },
+      });
+
       return updated;
     }
   );

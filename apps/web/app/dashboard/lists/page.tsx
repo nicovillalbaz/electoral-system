@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { 
-  Plus, Search, List as ListIcon, MapPin, Calendar, CheckCircle, Trash2, ArrowRight 
+  Plus, List as ListIcon, MapPin, Calendar, CheckCircle, Trash2, ArrowRight 
 } from "lucide-react";
 import api from "../../../lib/api";
 import FilterModal from "../persons/components/FilterModal";
@@ -12,10 +12,23 @@ export default function ListsIndexPage() {
   const [loading, setLoading] = useState(true);
   const [lists, setLists] = useState<any[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [availableAddresses, setAvailableAddresses] = useState<string[]>([]);
+  const [availableTags, setAvailableTags] = useState<any[]>([]);
 
-  // Cargar listas al iniciar
+  // Cargar listas y datos maestros al iniciar
   useEffect(() => {
     fetchLists();
+    const fetchMasterData = async () => {
+      try {
+        const resAddr = await api.get('/persons/addresses');
+        setAvailableAddresses(resAddr.data);
+        const resTags = await api.get('/tags');
+        setAvailableTags(resTags.data);
+      } catch (e) {
+        // silently ignore
+      }
+    };
+    fetchMasterData();
   }, []);
 
   const fetchLists = async () => {
@@ -23,7 +36,7 @@ export default function ListsIndexPage() {
       const res = await api.get("/lists"); // Asegúrate de que este endpoint devuelve las listas con su conteo si es posible
       setLists(res.data);
     } catch (e) {
-      console.error("Error cargando listas", e);
+      // silently ignore
     } finally {
       setLoading(false);
     }
@@ -58,7 +71,7 @@ export default function ListsIndexPage() {
       await api.delete(`/lists/${id}`);
       fetchLists();
     } catch (e) {
-      console.error(e);
+      // silently ignore
     }
   };
 
@@ -144,8 +157,8 @@ export default function ListsIndexPage() {
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onApply={handleCreateList}
-        availableAddresses={[]} // Deberían venir de props o contexto
-        availableTags={[]}
+        availableAddresses={availableAddresses}
+        availableTags={availableTags}
       />
     </div>
   );

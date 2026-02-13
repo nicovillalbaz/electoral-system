@@ -177,6 +177,13 @@ function buildSmartQuery(filters: any, baseParamIndex: number) {
       idx++;
   }
 
+  // 9. Filtro por HA VOTADO
+  if (filters.hasVoted === true || filters.hasVoted === 'true') {
+      conditions.push(`p.has_voted = true`);
+  } else if (filters.hasVoted === false || filters.hasVoted === 'false') {
+      conditions.push(`p.has_voted = false`);
+  }
+
   return { 
     whereClause: conditions.length > 0 ? "AND " + conditions.join(" AND ") : "", 
     values 
@@ -225,7 +232,7 @@ export async function listGetMembers(campaignId: string, listId: string, limit: 
         count(*) OVER() as full_count
     FROM persons p
     JOIN global_citizens g ON p.citizen_id = g.id
-    WHERE p.campaign_id = $1 
+    WHERE p.campaign_id = $1 AND p.deleted_at IS NULL
     ${whereClause}
     ORDER BY p.updated_at DESC
     LIMIT $${values.length + 2} OFFSET $${values.length + 3}

@@ -6,7 +6,7 @@ export async function login(email: string, passwordPlain: string, campaignId: st
   const res = await query(
     `SELECT id, campaign_id, email, password_hash, full_name, role, is_active
      FROM users
-     WHERE email = $1 AND campaign_id = $2`,
+     WHERE email = $1 AND campaign_id = $2 AND deleted_at IS NULL`,
     [email.toLowerCase(), campaignId]
   );
 
@@ -23,7 +23,7 @@ export async function login(email: string, passwordPlain: string, campaignId: st
 }
 
 export async function changePassword(userId: string, current: string, newPass: string) {
-  const res = await query(`SELECT password_hash FROM users WHERE id=$1`, [userId]);
+  const res = await query(`SELECT password_hash FROM users WHERE id=$1 AND deleted_at IS NULL`, [userId]);
   const user = res.rows[0];
   if (!user) throw unauthorized();
 
@@ -36,7 +36,7 @@ export async function changePassword(userId: string, current: string, newPass: s
 
 export async function adminResetPassword(campaignId: string, targetUserId: string, newPass: string) {
   // Verificar que el target pertenezca a la misma campaña
-  const check = await query(`SELECT id FROM users WHERE id=$1 AND campaign_id=$2`, [targetUserId, campaignId]);
+  const check = await query(`SELECT id FROM users WHERE id=$1 AND campaign_id=$2 AND deleted_at IS NULL`, [targetUserId, campaignId]);
   if (!check.rows[0]) throw notFound("Usuario no encontrado en esta campaña");
 
   const newHash = await hashPassword(newPass);

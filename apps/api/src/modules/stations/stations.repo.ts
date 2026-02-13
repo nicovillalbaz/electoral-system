@@ -3,7 +3,7 @@ import { forbidden } from "../../common/http/errors";
 
 async function assertStationInCampaign(campaignId: string, stationId: string) {
   const res = await query(
-    `SELECT 1 FROM stations WHERE id=$1 AND campaign_id=$2`,
+    `SELECT 1 FROM stations WHERE id=$1 AND campaign_id=$2 AND deleted_at IS NULL`,
     [stationId, campaignId]
   );
   if ((res.rowCount ?? 0) === 0) {
@@ -86,14 +86,16 @@ export async function stationList(campaignId: string) {
   const res = await query(
     `SELECT 
         s.*,
+        u.full_name as manager_name,
         COUNT(p.id) FILTER (WHERE p.assigned_station_id = s.id) as assigned_count,
         COUNT(p.id) FILTER (WHERE p.assigned_station_id = s.id AND (p.status_day_d = 'VOTED' OR p.has_voted = true)) as voted_count
      FROM stations s
+     LEFT JOIN users u ON u.id = s.manager_user_id
      LEFT JOIN persons p 
        ON p.assigned_station_id = s.id 
       AND p.campaign_id = $1
      WHERE s.campaign_id=$1 AND s.deleted_at IS NULL
-     GROUP BY s.id
+     GROUP BY s.id, u.full_name
      ORDER BY s.name`,
     [campaignId]
   );
@@ -117,7 +119,7 @@ export async function stationUpdate(campaignId: string, id: string, data: any) {
              manager_user_id = COALESCE($8, manager_user_id),
              notes = COALESCE($9, notes),
              metadata = COALESCE($10, metadata)
-         WHERE id=$1 AND campaign_id=$2
+         WHERE id=$1 AND campaign_id=$2 AND deleted_at IS NULL
          RETURNING *`,
         [
             id, 
@@ -137,7 +139,8 @@ export async function stationUpdate(campaignId: string, id: string, data: any) {
 
 export async function stationDelete(campaignId: string, id: string) {
     // Soft Delete
-    await query(`UPDATE stations SET deleted_at = NOW(), status='INACTIVE' WHERE id=$1 AND campaign_id=$2`, [id, campaignId]);
+    await query(`UPDATE stations SET deleted_at = NOW(), status='INACTIVE' WHERE id=$1 AND campaign_id=$2 AND deleted_at IS NULL`, [id, campaignId]);
+
     return { success: true };
 }
 
@@ -230,12 +233,6 @@ export async function checkInToStation(campaignId: string, stationId: string, pe
     if ((personRes.rowCount ?? 0) === 0) {
         throw forbidden("Person not found or access denied");
     }
-    // 1. Check if already checked in today?
-    // Database constraint usually handles duplicate checkins (station_checkins_pkey typically includes date or unique index).
-    // Let's assume schema allows multiple checkins or we just insert.
-    
-    // We update person status to CHECKED_IN (or similar if we track that in persons table) but usually status_day_d is separate.
-    // However, the prompt implies "Pasó por PC" is a boolean check.
     
     const res = await query(
         `INSERT INTO station_checkins (campaign_id, station_id, person_id, checkin_by_user_id, checkin_at)
@@ -245,17 +242,6 @@ export async function checkInToStation(campaignId: string, stationId: string, pe
         [campaignId, stationId, personId, userId]
     );
 
-    // Also update Person to ensure "campaign_status" or similar reflects this?
-    // "Pasó por PC" might be `campaign_status = 'VISITED_PC'` or just reliance on this table.
-    // User asked for "Checkin Logic". 
-    // Let's also update the person's campaign_status if it's "lower" than checked in?
-    // Actually, let's just log event.
-    // ... existing code ...
-    // Also update Person to ensure "campaign_status" or similar reflects this?
-    // "Pasó por PC" might be `campaign_status = 'VISITED_PC'` or just reliance on this table.
-    // User asked for "Checkin Logic". 
-    // Let's also update the person's campaign_status if it's "lower" than checked in?
-    // Actually, let's just log event.
     // Sync Day-D status to keep it consistent with station_checkins
     await query(
         `UPDATE persons 
@@ -404,9 +390,6 @@ export async function addCollaborator(campaignId: string, stationId: string, per
             const isIncomplete = !currentFirst.trim() || !currentLast.trim() || currentFirst === 'NN' || currentLast === 'NN';
 
             if (isIncomplete && citizenData.firstName && citizenData.lastName) {
-                // UPDATE names in global_citizens (via subquery or direct update if we had ID, here we need citizen_id from the join)
-                // Let's get citizen_id first or do a join update. 
-                // Simpler: Update global_citizens linked to this person.
                 await query(
                     `UPDATE global_citizens 
                      SET first_name = $1, last_name = $2
@@ -478,7 +461,7 @@ export async function getStationDashboard(campaignId: string, stationId: string,
         [campaignId, stationId]
     );
 
-    // 2. Stats (Fixed: Uses station_checkins for visits)
+    // 2. Stats (Fixed: removed wasteful FROM persons)
     const statsQuery = await query(
         `SELECT 
             (SELECT COUNT(*) FROM persons WHERE assigned_station_id=$1 AND campaign_id=$2) as total_assigned,
@@ -488,9 +471,7 @@ export async function getStationDashboard(campaignId: string, stationId: string,
                 AND campaign_id=$2 
                 AND checkin_at >= CURRENT_DATE 
                 AND checkin_at < CURRENT_DATE + INTERVAL '1 day') as total_visited_pc,
-            (SELECT COUNT(*) FROM persons WHERE assigned_station_id=$1 AND campaign_id=$2 AND (status_day_d='VOTED' OR has_voted=true)) as total_voted
-         FROM persons
-         WHERE campaign_id=$2`, 
+            (SELECT COUNT(*) FROM persons WHERE assigned_station_id=$1 AND campaign_id=$2 AND (status_day_d='VOTED' OR has_voted=true)) as total_voted`,
         [stationId, campaignId]
     );
 

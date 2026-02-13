@@ -1479,6 +1479,26 @@ ALTER TABLE ONLY public.zones
     ADD CONSTRAINT zones_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id) ON DELETE CASCADE;
 
 
+--
+-- Name: events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    event_type VARCHAR(50) NOT NULL,
+    actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    person_id UUID REFERENCES persons(id) ON DELETE SET NULL,
+    station_id UUID REFERENCES stations(id) ON DELETE SET NULL,
+    payload JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_campaign ON events(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(campaign_id, event_type);
+CREATE INDEX IF NOT EXISTS idx_events_created ON events(campaign_id, created_at DESC);
+
+
 -- Completed on 2026-02-10 22:52:16
 
 --

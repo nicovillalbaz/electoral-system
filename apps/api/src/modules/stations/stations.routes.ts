@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireRole } from "../../common/middleware/role";
 import { notFound } from "../../common/http/errors";
 import { stationCreate, stationList, getStationStats, getStationsStatsBatch, getStationCheckins, checkInToStation, stationUpdate, getStationDashboard, addCollaborator, removeCollaborator } from "./stations.repo";
+import { logEvent } from "../events/events.repo";
 
 export async function stationsRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
@@ -15,11 +16,20 @@ export async function stationsRoutes(app: FastifyInstance) {
       address: z.string().optional(),
       cityId: z.string().uuid().optional(),
       zoneId: z.string().uuid().optional(),
-      neighborhoodId: z.string().uuid().optional(),
       managerUserId: z.string().uuid().optional(),
     }).parse(req.body);
 
-    return stationCreate(req.user.campaignId, body);
+    const station = await stationCreate(req.user.campaignId, body);
+
+    await logEvent({
+      campaignId: req.user.campaignId,
+      eventType: "STATION_CREATED",
+      actorUserId: req.user.userId,
+      stationId: station?.id,
+      payload: { name: body.name, address: body.address },
+    });
+
+    return station;
   });
 
   app.get("/stats/batch", { preHandler: [app.requireAuth] }, async (req: any) => {
@@ -45,7 +55,6 @@ export async function stationsRoutes(app: FastifyInstance) {
         address: z.string().optional(),
         cityId: z.string().uuid().optional(),
         zoneId: z.string().uuid().optional(),
-        neighborhoodId: z.string().uuid().optional(),
         managerUserId: z.string().uuid().optional(),
         notes: z.string().optional(),
         metadata: z.any().optional(),
@@ -53,6 +62,15 @@ export async function stationsRoutes(app: FastifyInstance) {
 
     const updated = await stationUpdate(req.user.campaignId, id, body);
     if (!updated) throw notFound("Station not found");
+
+    await logEvent({
+      campaignId: req.user.campaignId,
+      eventType: "STATION_UPDATED",
+      actorUserId: req.user.userId,
+      stationId: id,
+      payload: { changes: body },
+    });
+
     return updated;
   });
 

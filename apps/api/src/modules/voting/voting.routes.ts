@@ -68,10 +68,20 @@ export async function votingRoutes(app: FastifyInstance) {
       pickupAddress: z.string(),
       destinationAddress: z.string().optional(),
       notes: z.string().optional(),
-      assignedUserId: z.string().uuid().optional(), // <--- Added
+      assignedUserId: z.string().uuid().optional(),
     }).parse(req.body);
 
-    return createTransportTask(req.user.campaignId, req.user.userId, body);
+    const task = await createTransportTask(req.user.campaignId, req.user.userId, body);
+
+    await logEvent({
+      campaignId: req.user.campaignId,
+      eventType: "TRANSPORT_REQUESTED",
+      actorUserId: req.user.userId,
+      personId: body.personId,
+      payload: { pickupAddress: body.pickupAddress, destinationAddress: body.destinationAddress },
+    });
+
+    return task;
   });
 
   // 2. Trigger Logística/Viático
@@ -79,10 +89,20 @@ export async function votingRoutes(app: FastifyInstance) {
     const body = z.object({
         personId: z.string().uuid(),
         notes: z.string().optional(),
-        assignedUserId: z.string().uuid().optional(), // <--- Added
+        assignedUserId: z.string().uuid().optional(),
     }).parse(req.body);
 
-    return createFinancialTask(req.user.campaignId, req.user.userId, body);
+    const task = await createFinancialTask(req.user.campaignId, req.user.userId, body);
+
+    await logEvent({
+      campaignId: req.user.campaignId,
+      eventType: "FINANCIAL_REQUESTED",
+      actorUserId: req.user.userId,
+      personId: body.personId,
+      payload: { notes: body.notes },
+    });
+
+    return task;
   });
 
    // 3. The Grid
@@ -107,7 +127,17 @@ export async function votingRoutes(app: FastifyInstance) {
           status: z.enum(['PENDING', 'SEARCHING', 'ON_TRANSIT', 'ARRIVED', 'CHECKED_IN', 'VOTED']),
       }).parse(req.body);
 
-      return updateDayDStatus(req.user.campaignId, req.user.userId, body.personId, body.status);
+      const result = await updateDayDStatus(req.user.campaignId, req.user.userId, body.personId, body.status);
+
+      await logEvent({
+        campaignId: req.user.campaignId,
+        eventType: "DAY_D_STATUS_CHANGED",
+        actorUserId: req.user.userId,
+        personId: body.personId,
+        payload: { newStatus: body.status },
+      });
+
+      return result;
    });
 
    // 5. Check Collision

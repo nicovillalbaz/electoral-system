@@ -4,8 +4,8 @@ export async function totals(campaignId: string) {
   const res = await query(
     `SELECT
        COUNT(DISTINCT citizen_id)::int AS total_persons,
-       COUNT(DISTINCT CASE WHEN status_day_d = 'CHECKED_IN' THEN citizen_id END)::int AS voted,
-       COUNT(DISTINCT CASE WHEN status_day_d IS DISTINCT FROM 'CHECKED_IN' THEN citizen_id END)::int AS missing,
+       COUNT(DISTINCT CASE WHEN (has_voted = true OR status_day_d = 'VOTED') THEN citizen_id END)::int AS voted,
+       COUNT(DISTINCT CASE WHEN (has_voted = false AND status_day_d IS DISTINCT FROM 'VOTED') THEN citizen_id END)::int AS missing,
        COUNT(DISTINCT CASE WHEN current_vote_intent = 'SURE' THEN citizen_id END)::int AS sure_votes
      FROM persons
      WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))`,

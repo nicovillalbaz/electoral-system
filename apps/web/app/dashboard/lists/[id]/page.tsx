@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation"; // Para leer el ID de la URL
 import { 
-  ArrowLeft, Search, Filter, MoreVertical, Edit, MapPin, Flag, User, Trash2, Pen, Save, X 
+  ArrowLeft, Filter, Edit, MapPin, User, Trash2, Pen, Save, X 
 } from "lucide-react";
 import api from "../../../../lib/api";
 import PersonModal from "../../persons/components/PersonModal"; 
@@ -40,7 +40,7 @@ export default function SmartListPage() {
       setListData(res.data);
       setMembers(res.data.members);
     } catch (error) {
-       // console.error("Error cargando lista", error);
+
        // router.push("/dashboard/lists"); 
     } finally {
       setLoading(false);
@@ -93,7 +93,7 @@ export default function SmartListPage() {
             const resTags = await api.get('/tags');
             setAvailableTags(resTags.data);
         } catch(e) {
-            console.error("Error loading master data", e);
+            // silently ignore
         }
       };
       fetchData();
@@ -248,8 +248,8 @@ export default function SmartListPage() {
             fetchListMembers(); // Recargamos la lista al guardar cambios
         }}
         personToEdit={personToEdit}
-        availableAddresses={[]} // Puedes pasarle los del contexto si quieres
-        availableTags={[]}
+        availableAddresses={availableAddresses}
+        availableTags={availableTags}
       />
 
       {/* 2. Editar Filtros de la Lista */}
