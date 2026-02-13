@@ -77,7 +77,7 @@ export default function ActivitiesPage() {
       const params: any = { 
         q: debouncedSearch,
         status: statusFilter === "ALL" ? undefined : statusFilter,
-        assignedUserId: onlyMine && currentUser ? currentUser.id : undefined // <--- Filter Logic
+        assignedUserId: onlyMine && currentUser?.id ? currentUser.id : undefined // <--- Filter Logic
       };
 
       if (typeFilter) params.taskType = typeFilter;
@@ -212,14 +212,15 @@ export default function ActivitiesPage() {
   };
 
   const handleDelete = async (task: Task) => {
-      if (task.task_type === 'FINANCIAL') {
-          // Block delete, suggest close
-          if (confirm("Las tareas financieras (viáticos/logística) no se pueden eliminar.\n¿Desea CERRAR la tarea registrando el gasto?")) {
+      // 1. If it's Financial AND Pending, force them to "Close" (register expense) first.
+      if (task.task_type === 'FINANCIAL' && !task.completed_at) {
+          if (confirm("Las tareas financieras (viáticos/logística) pendientes no se pueden eliminar directamente.\n¿Desea CERRAR la tarea registrando el gasto ahora?")) {
              setFinancialTaskToClose(task);
           }
           return;
       }
 
+      // 2. If it's standard or a Completed Financial task, allow deletion.
       if(!confirm("¿Estás seguro de eliminar esta actividad?")) return;
       try {
           await api.delete(`/tasks/${task.id}`);
