@@ -154,8 +154,8 @@ export async function personsRoutes(app: FastifyInstance) {
             .optional(),
           notes: z.string().optional(),
           campaignStatus: z.string().optional(),
-          assignedStationId: z.string().uuid().optional().nullable(),
-          assignedUserId: z.string().uuid().optional().nullable(),
+          assignedStationId: z.string().uuid().or(z.literal("")).optional().nullable(),
+          assignedUserId: z.string().uuid().or(z.literal("")).optional().nullable(),
           requests: z.array(z.any()).optional(),
           hasFinancialNeeds: z.boolean().optional(),
           financialNeedsFulfilled: z.boolean().optional(),
@@ -229,8 +229,8 @@ export async function personsRoutes(app: FastifyInstance) {
           hasFinancialNeeds: z.boolean().optional(),
           financialNeedsFulfilled: z.boolean().optional(),
           financialAmount: z.number().optional(),
-          assignedStationId: z.string().uuid().optional().nullable(),
-          assignedUserId: z.string().uuid().optional().nullable(),
+          assignedStationId: z.string().uuid().or(z.literal("")).optional().nullable(),
+          assignedUserId: z.string().uuid().or(z.literal("")).optional().nullable(),
         })
         .parse(req.body);
 

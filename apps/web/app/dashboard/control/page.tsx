@@ -2,13 +2,11 @@
 
 import { useEffect, useState, useRef } from "react";
 import { Search, Loader2 } from "lucide-react";
-import BattleModal from "./components/BattleModal";
 
 export default function DayDControlPage() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedPerson, setSelectedPerson] = useState<any | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Focus omnibar on mount
@@ -79,13 +77,12 @@ export default function DayDControlPage() {
             {/* RESULTS LIST */}
             <div className="space-y-2">
                 {results.map((person) => (
-                    <button
+                    <div
                         key={person.id}
-                        onClick={() => setSelectedPerson(person)}
-                        className="w-full text-left bg-zinc-900/50 hover:bg-zinc-800 border border-zinc-800/50 hover:border-zinc-700 p-4 rounded-xl flex items-center justify-between group transition-all"
+                        className="w-full text-left bg-zinc-900/50 border border-zinc-800/50 p-4 rounded-xl flex items-center justify-between"
                     >
                         <div>
-                            <div className="text-xl font-bold text-zinc-200 group-hover:text-white">
+                            <div className="text-xl font-bold text-zinc-200">
                                 {person.first_name} {person.last_name}
                             </div>
                             <div className="text-sm font-mono text-zinc-500">
@@ -109,7 +106,7 @@ export default function DayDControlPage() {
                                 </span>
                             )}
                         </div>
-                    </button>
+                    </div>
                 ))}
                 
                 {query.length >= 3 && results.length === 0 && !loading && (
@@ -121,19 +118,6 @@ export default function DayDControlPage() {
 
         </div>
 
-        {/* BATTLE MODAL */}
-        {selectedPerson && (
-            <BattleModal 
-                person={selectedPerson} 
-                onClose={() => setSelectedPerson(null)}
-                onUpdate={() => {
-                   // Refresh the specific person in the list logic or just trigger search again
-                   search();
-                   // Also update selectedPerson? BattleModal uses props. Actually better to close or re-fetch.
-                   // Ideally we re-fetch the person data.
-                }}
-            />
-        )}
     </div>
   );
 }

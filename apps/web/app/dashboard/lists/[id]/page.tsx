@@ -37,8 +37,9 @@ export default function SmartListPage() {
     setLoading(true);
     try {
       const res = await api.get(`/lists/${listId}/members`);
-      setListData(res.data);
-      setMembers(res.data.members);
+      const data = res.data;
+      setListData({ ...data, filters: data.filtersApplied || data.filters });
+      setMembers(data.members || []);
     } catch (error) {
 
        // router.push("/dashboard/lists"); 
@@ -258,7 +259,7 @@ export default function SmartListPage() {
         onClose={() => setShowFilters(false)}
         onApply={handleUpdateListFilters}
         // Pasamos los valores actuales para que el modal se pre-llene
-        initialValues={listData?.filters}
+        initialValues={listData?.filtersApplied || listData?.filters}
         availableAddresses={availableAddresses}
         availableTags={availableTags}
       />
@@ -268,7 +269,7 @@ export default function SmartListPage() {
         isOpen={showBulkModal}
         onClose={() => setShowBulkModal(false)}
         onSuccess={() => { fetchListMembers(); alert("Actualización completada"); }}
-        activeFilters={listData?.filters}
+        activeFilters={listData?.filtersApplied || listData?.filters || {}}
       />
 
     </div>

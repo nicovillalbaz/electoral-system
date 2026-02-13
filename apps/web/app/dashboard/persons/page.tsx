@@ -38,17 +38,25 @@ export default function PersonsPage() {
   const [sorting, setSorting] = useState({ field: "last_name", dir: "ASC" });
   const [availableAddresses, setAvailableAddresses] = useState<string[]>([]);
   const [availableTags, setAvailableTags] = useState<any[]>([]);
+  const [stations, setStations] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [activeFilters, setActiveFilters] = useState<any>({});
   useEffect(() => {
     const fetchMasterData = async () => {
       try {
-        // 1. Cargar Direcciones
-        const resAddr = await api.get("/persons/addresses");
-        setAvailableAddresses(resAddr.data);
+        const results = await Promise.allSettled([
+          api.get("/persons/addresses"),
+          api.get("/tags"),
+          api.get("/stations"),
+          api.get("/users"),
+        ]);
 
-        // 2. Cargar Etiquetas Reales
-        const resTags = await api.get("/tags");
-        setAvailableTags(resTags.data);
+        const [resAddr, resTags, resStations, resUsers] = results;
+
+        if (resAddr.status === "fulfilled") setAvailableAddresses(resAddr.value.data);
+        if (resTags.status === "fulfilled") setAvailableTags(resTags.value.data);
+        if (resStations.status === "fulfilled") setStations(resStations.value.data);
+        if (resUsers.status === "fulfilled") setUsers(resUsers.value.data);
       } catch (e) {
         // silently ignore master data load errors
       }
@@ -57,9 +65,71 @@ export default function PersonsPage() {
   }, []);
   // --- ESTADOS DE VISTA ---
   const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const columnLabels: Record<string, string> = {
+    document: "C\u00e9dula",
+    name: "Nombre",
+    order: "Orden",
+    table: "Mesa",
+    address: "Direcci\u00f3n",
+    exactAddress: "Direcci\u00f3n exacta",
+    phone: "Tel\u00e9fono",
+    whatsapp: "WhatsApp",
+    party: "Partido",
+    affiliationDate: "Fecha afiliaci\u00f3n",
+    birthdate: "Nacimiento",
+    sex: "Sexo",
+    intent: "Intenci\u00f3n",
+    status: "Voto",
+    campaign: "Estado visita",
+    isVisited: "Visitado",
+    transport: "Transporte",
+    transportStatus: "Estado transporte",
+    requests: "Pedidos",
+    financial: "Aporte",
+    financialFulfilled: "Aporte entregado",
+    financialAmount: "Monto aporte",
+    assignedStation: "Puesto",
+    assignedUser: "Responsable",
+    department: "Departamento",
+    district: "Distrito",
+    place: "Local",
+    notes: "Notas",
+    dayDStatus: "Estado D\u00eda D",
+    checkin: "Check-in",
+    actions: "Acciones",
+  };
   const [columns, setColumns] = useState({
-    document: true, name: true, order: true, address: true,   
-    phone: true, party: true, intent: true, status: true, actions: true
+    document: true,
+    name: true,
+    order: true,
+    table: true,
+    address: true,
+    exactAddress: false,
+    phone: true,
+    whatsapp: false,
+    party: true,
+    affiliationDate: false,
+    birthdate: false,
+    sex: false,
+    intent: true,
+    status: true,
+    campaign: false,
+    isVisited: false,
+    transport: false,
+    transportStatus: false,
+    requests: false,
+    financial: false,
+    financialFulfilled: false,
+    financialAmount: false,
+    assignedStation: false,
+    assignedUser: false,
+    department: false,
+    district: false,
+    place: false,
+    notes: false,
+    dayDStatus: false,
+    checkin: false,
+    actions: true,
   });
 
   // --- ESTADOS DE MODALES ---
@@ -143,6 +213,43 @@ export default function PersonsPage() {
   };
 
   const totalPages = Math.ceil(totalRecords / limit);
+  const visibleColumnCount = Math.max(1, Object.values(columns).filter(Boolean).length);
+
+  const getStationName = (stationId?: string) => {
+    if (!stationId) return "-";
+    return stations.find((s) => s.id === stationId)?.name || stationId;
+  };
+
+  const getUserName = (userId?: string) => {
+    if (!userId) return "-";
+    const user = users.find((u) => u.id === userId);
+    return user?.full_name || user?.name || user?.email || userId;
+  };
+
+  const formatDate = (value?: string) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleDateString();
+  };
+
+  const formatDateTime = (value?: string) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString();
+  };
+
+  const getRequestsCount = (value: any) => {
+    if (!value) return 0;
+    if (Array.isArray(value)) return value.length;
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+      return 0;
+    }
+  };
 
   return (
     <div className="space-y-6 pb-20 relative z-0">
@@ -166,7 +273,7 @@ export default function PersonsPage() {
                 {showColumnMenu && (
                     <>
                         <div className="fixed inset-0 z-10" onClick={() => setShowColumnMenu(false)}></div>
-                        <div className="absolute right-0 top-12 bg-zinc-900 border border-zinc-700 p-3 rounded-xl shadow-xl z-20 w-48 space-y-2">
+                        <div className="absolute right-0 top-12 bg-zinc-900 border border-zinc-700 p-3 rounded-xl shadow-xl z-20 w-56 max-h-96 overflow-y-auto space-y-2">
                             <p className="text-xs font-bold text-zinc-500 uppercase mb-2">Mostrar Columnas</p>
                             {Object.keys(columns).map((col) => (
                                 <label key={col} className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer hover:bg-zinc-800 p-1 rounded">
@@ -176,7 +283,7 @@ export default function PersonsPage() {
                                         onChange={() => setColumns({...columns, [col]: !columns[col as keyof typeof columns]})}
                                         className="rounded bg-black border-zinc-600 text-white focus:ring-0"
                                     />
-                                    <span className="capitalize">{col}</span>
+                                    <span>{columnLabels[col] || col}</span>
                                 </label>
                             ))}
                         </div>
@@ -216,26 +323,70 @@ export default function PersonsPage() {
                     {columns.document && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("document_id")}>Cédula <SortIcon field="document_id"/></th>}
                     {columns.name && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("last_name")}>Nombre <SortIcon field="last_name"/></th>}
                     {columns.order && <th className="p-4 text-center cursor-pointer hover:text-white" onClick={() => handleSort("voting_order_number")}>Orden <SortIcon field="voting_order_number"/></th>}
+                    {columns.table && <th className="p-4 text-center cursor-pointer hover:text-white" onClick={() => handleSort("voting_table_number")}>Mesa <SortIcon field="voting_table_number"/></th>}
+                    {columns.place && <th className="p-4">Local</th>}
+                    {columns.district && <th className="p-4">Distrito</th>}
+                    {columns.department && <th className="p-4">Departamento</th>}
                     {columns.address && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("address")}>Dirección <SortIcon field="address"/></th>}
+                    {columns.exactAddress && <th className="p-4">Dirección exacta</th>}
                     {columns.phone && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("phone_number")}>Teléfono <SortIcon field="phone_number"/></th>}
+                    {columns.whatsapp && <th className="p-4">WhatsApp</th>}
                     {columns.party && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("party_affiliation")}>Partido <SortIcon field="party_affiliation"/></th>}
+                    {columns.affiliationDate && <th className="p-4">Fecha Afiliación</th>}
+                    {columns.birthdate && <th className="p-4">Nacimiento</th>}
+                    {columns.sex && <th className="p-4">Sexo</th>}
                     {columns.intent && <th className="p-4 cursor-pointer hover:text-white" onClick={() => handleSort("current_vote_intent")}>Intención <SortIcon field="current_vote_intent"/></th>}
-                    {columns.status && <th className="p-4">Estado</th>}
+                    {columns.status && <th className="p-4">Voto</th>}
+                    {columns.campaign && <th className="p-4">Estado Visita</th>}
+                    {columns.isVisited && <th className="p-4">Visitado</th>}
+                    {columns.transport && <th className="p-4">Transporte</th>}
+                    {columns.transportStatus && <th className="p-4">Estado Transporte</th>}
+                    {columns.dayDStatus && <th className="p-4">Estado Día D</th>}
+                    {columns.checkin && <th className="p-4">Check-in</th>}
+                    {columns.requests && <th className="p-4 text-center">Pedidos</th>}
+                    {columns.financial && <th className="p-4">Aporte</th>}
+                    {columns.financialFulfilled && <th className="p-4">Aporte Entregado</th>}
+                    {columns.financialAmount && <th className="p-4 text-right">Monto Aporte</th>}
+                    {columns.assignedStation && <th className="p-4">Puesto</th>}
+                    {columns.assignedUser && <th className="p-4">Responsable</th>}
+                    {columns.notes && <th className="p-4">Notas</th>}
                     {columns.actions && <th className="p-4 text-right">#</th>}
                 </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
-                {loading ? Array.from({length:5}).map((_,i)=><tr key={i} className="animate-pulse"><td colSpan={8} className="p-4"><div className="h-8 bg-zinc-800/50 rounded"></div></td></tr>) : 
+                {loading ? Array.from({length:5}).map((_,i)=><tr key={i} className="animate-pulse"><td colSpan={visibleColumnCount} className="p-4"><div className="h-8 bg-zinc-800/50 rounded"></div></td></tr>) : 
                 persons.map((p) => (
                     <tr key={p.id} className="hover:bg-zinc-800/40 transition-colors group">
                         {columns.document && <td className="p-4 font-mono text-white">{p.document_id}</td>}
                         {columns.name && <td className="p-4 font-medium text-zinc-200">{p.last_name}, {p.first_name}</td>}
-                        {columns.order && <td className="p-4 text-center font-mono text-zinc-500 bg-black/20">{p.voting_order_number || "-"}</td>}
+                        {columns.order && <td className="p-4 text-center font-mono text-zinc-500 bg-black/20">{p.voting_order_number ?? "-"}</td>}
+                        {columns.table && <td className="p-4 text-center font-mono text-zinc-500">{p.voting_table_number ?? "-"}</td>}
+                        {columns.place && <td className="p-4 text-xs text-zinc-300">{p.location_place || "-"}</td>}
+                        {columns.district && <td className="p-4 text-xs text-zinc-300">{p.location_district || "-"}</td>}
+                        {columns.department && <td className="p-4 text-xs text-zinc-300">{p.location_department || "-"}</td>}
                         {columns.address && <td className="p-4"><div className="flex items-center gap-2 max-w-[200px]" title={p.address}><MapPin size={14} className="text-zinc-600 shrink-0"/><span className="truncate text-xs">{p.address || "-"}</span></div></td>}
+                        {columns.exactAddress && <td className="p-4"><div className="max-w-[200px] truncate text-xs" title={p.exact_address}>{p.exact_address || "-"}</div></td>}
                         {columns.phone && <td className="p-4 text-xs font-mono text-zinc-400">{p.phone_number || "-"}</td>}
+                        {columns.whatsapp && <td className="p-4 text-xs font-mono text-zinc-400">{p.whatsapp_number || "-"}</td>}
                         {columns.party && <td className="p-4"><span className={`text-xs flex items-center gap-1 ${getPartyColor(p.party_affiliation)}`}>{p.party_affiliation ? <Flag size={12} fill="currentColor"/> : null} {p.party_affiliation || "-"}</span></td>}
+                        {columns.affiliationDate && <td className="p-4 text-xs">{formatDate(p.party_affiliation_date)}</td>}
+                        {columns.birthdate && <td className="p-4 text-xs">{formatDate(p.birthdate)}</td>}
+                        {columns.sex && <td className="p-4 text-xs">{p.sex || "-"}</td>}
                         {columns.intent && <td className="p-4"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.current_vote_intent === 'SURE' ? 'bg-emerald-900 text-emerald-300' : 'bg-zinc-800'}`}>{p.current_vote_intent}</span></td>}
                         {columns.status && <td className="p-4">{p.has_voted ? <span className="text-emerald-500 font-bold text-xs">✅ VOTÓ</span> : <span className="text-zinc-600 text-xs">Pendiente</span>}</td>}
+                        {columns.campaign && <td className="p-4"><span className="text-xs bg-zinc-800 px-2 py-0.5 rounded">{p.campaign_status || "-"}</span></td>}
+                        {columns.isVisited && <td className="p-4 text-xs">{p.is_visited ? "Sí" : "No"}</td>}
+                        {columns.transport && <td className="p-4 text-xs">{p.needs_transport ? "Sí" : "No"}</td>}
+                        {columns.transportStatus && <td className="p-4 text-xs">{p.transport_status || "-"}</td>}
+                        {columns.dayDStatus && <td className="p-4 text-xs">{p.status_day_d || "-"}</td>}
+                        {columns.checkin && <td className="p-4 text-xs">{formatDateTime(p.station_checkin_at)}</td>}
+                        {columns.requests && <td className="p-4 text-center text-xs"><span className="bg-zinc-800 px-2 py-0.5 rounded">{getRequestsCount(p.requests)}</span></td>}
+                        {columns.financial && <td className="p-4 text-xs">{p.has_financial_needs ? "Sí" : "No"}</td>}
+                        {columns.financialFulfilled && <td className="p-4 text-xs">{p.financial_needs_fulfilled ? "Sí" : "No"}</td>}
+                        {columns.financialAmount && <td className="p-4 text-right text-xs font-mono">{p.financial_amount !== null && p.financial_amount !== undefined ? Number(p.financial_amount).toLocaleString() : "-"}</td>}
+                        {columns.assignedStation && <td className="p-4 text-xs">{getStationName(p.assigned_station_id)}</td>}
+                        {columns.assignedUser && <td className="p-4 text-xs">{getUserName(p.assigned_user_id)}</td>}
+                        {columns.notes && <td className="p-4"><div className="max-w-[240px] truncate text-xs" title={p.notes}>{p.notes || "-"}</div></td>}
                         {columns.actions && <td className="p-4 text-right"><button onClick={() => openEdit(p)} className="text-zinc-500 hover:text-white p-2 bg-zinc-800 rounded-full hover:bg-zinc-700"><Edit size={16} /></button></td>}
                     </tr>
                 ))}

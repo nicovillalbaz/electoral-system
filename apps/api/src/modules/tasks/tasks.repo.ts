@@ -1,4 +1,5 @@
 import { query, pool } from "../../db/query";
+import { badRequest } from "../../common/http/errors";
 
 export async function tasksList(
   campaignId: string,
@@ -157,6 +158,21 @@ export async function taskUpdate(campaignId: string, taskId: string, data: any) 
   const params: any[] = [campaignId, taskId];
   let paramIndex = 3;
 
+  if (data.completed === false) {
+    const guardRes = await query(
+      `SELECT task_type, completed_at
+       FROM tasks
+       WHERE (campaign_id = $1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) AND id = $2
+       LIMIT 1`,
+      [campaignId, taskId]
+    );
+    const guard = guardRes.rows[0];
+    if (!guard) return null;
+    if (guard.task_type === "FINANCIAL" && guard.completed_at) {
+      throw badRequest("No se puede desmarcar una actividad financiera ya completada.");
+    }
+  }
+
   if (data.title !== undefined) {
     updates.push(`title = $${paramIndex++}`);
     params.push(data.title);
@@ -201,7 +217,13 @@ export async function taskUpdate(campaignId: string, taskId: string, data: any) 
   `;
 
   const res = await query(sql, params);
-  return res.rows[0];
+  const task = res.rows[0];
+
+  if (task && data.completed !== undefined && task.task_type === "FINANCIAL" && task.related_person_id) {
+    await syncFinancialStatusFromTask({ query }, campaignId, task.id, task.related_person_id, data.completed);
+  }
+
+  return task;
 }
 
 export async function taskDelete(campaignId: string, taskId: string) {
@@ -225,13 +247,14 @@ export async function taskCompleteWithExpense(
       UPDATE tasks 
       SET completed_at = NOW(), updated_at = NOW()
       WHERE id = $1 AND (campaign_id = $2 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $2))
-      RETURNING id
+      RETURNING id, task_type, related_person_id
     `;
     const taskRes = await client.query(completeSql, [taskId, campaignId]);
     
     if (taskRes.rowCount === 0) {
       throw new Error("Task not found or access denied");
     }
+    const task = taskRes.rows[0];
 
     // 2. Insert Expense
     const expenseSql = `
@@ -241,6 +264,10 @@ export async function taskCompleteWithExpense(
     `;
     await client.query(expenseSql, [taskId, data.amount, data.concept, data.userId]);
 
+    if (task.task_type === "FINANCIAL" && task.related_person_id) {
+      await syncFinancialStatusFromTask(client, campaignId, task.id, task.related_person_id, true, data.amount);
+    }
+
     await client.query("COMMIT");
     return { success: true };
   } catch (e) {
@@ -248,5 +275,61 @@ export async function taskCompleteWithExpense(
     throw e;
   } finally {
     client.release();
+  }
+}
+
+async function syncFinancialStatusFromTask(
+  q: { query: (sql: string, params?: any[]) => Promise<any> },
+  campaignId: string,
+  taskId: string,
+  personId: string,
+  completed: boolean,
+  amount?: number
+) {
+  if (completed) {
+    const params: any[] = [campaignId, personId];
+    let sql = `
+      UPDATE persons
+      SET has_financial_needs = true,
+          financial_needs_fulfilled = true
+    `;
+    if (amount !== undefined) {
+      sql += `,
+          financial_amount = $3
+    `;
+      params.push(amount);
+    }
+    sql += `,
+          updated_at = NOW()
+      WHERE id = $2
+        AND (campaign_id = $1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))
+    `;
+    await q.query(sql, params);
+    return;
+  }
+
+  const checkSql = `
+    SELECT 1
+    FROM tasks
+    WHERE related_person_id = $1
+      AND task_type = 'FINANCIAL'
+      AND completed_at IS NOT NULL
+      AND deleted_at IS NULL
+      AND id <> $2
+      AND (campaign_id = $3 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $3))
+    LIMIT 1
+  `;
+  const checkRes = await q.query(checkSql, [personId, taskId, campaignId]);
+  if (checkRes.rows.length === 0) {
+    await q.query(
+      `
+        UPDATE persons
+        SET financial_needs_fulfilled = false,
+            updated_at = NOW()
+        WHERE id = $2
+          AND (campaign_id = $1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1))
+      `,
+      [campaignId, personId]
+    );
   }
 }

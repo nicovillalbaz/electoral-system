@@ -259,7 +259,7 @@ export async function updateDayDStatus(
         // Update person (Hierarchy Support)
         const updateSql = `
             UPDATE persons 
-            SET status_day_d = $1,
+            SET status_day_d = $1::day_d_status_enum,
                 has_voted = CASE WHEN $1 = 'VOTED' THEN true ELSE has_voted END,
                 updated_at = NOW()
             WHERE id = $2 

@@ -67,6 +67,8 @@ export default function PersonModal({
     financialAmount: 0,
     partyAffiliation: "ANR" 
   });
+
+  const financialLocked = formData.financialNeedsFulfilled;
   
   // Custom State for New Request Input
   const [newRequestDetail, setNewRequestDetail] = useState("");
@@ -136,6 +138,17 @@ export default function PersonModal({
       setLoadingHistory(true);
       try { const res = await api.get(`/events?personId=${pid}&limit=50`); setHistory(res.data); } catch(e){} finally { setLoadingHistory(false); }
   };
+
+  useEffect(() => {
+    if (availableTags.length === 0) return;
+    setLocalTags((prev) => {
+      const map = new Map(prev.map((t) => [t.id, t]));
+      for (const t of availableTags) {
+        if (!map.has(t.id)) map.set(t.id, t);
+      }
+      return Array.from(map.values());
+    });
+  }, [availableTags]);
 
   // --- HANDLERS ---
   const handleAssignTag = async (tagId: string) => {
@@ -217,8 +230,6 @@ export default function PersonModal({
         check('transportStatus', 'transport_status');
         
         if (formData.hasFinancialNeeds !== !!personToEdit.has_financial_needs) payload.hasFinancialNeeds = formData.hasFinancialNeeds;
-        if (formData.financialNeedsFulfilled !== !!personToEdit.financial_needs_fulfilled) payload.financialNeedsFulfilled = formData.financialNeedsFulfilled;
-        check('financialAmount', 'financial_amount', true);
         check('partyAffiliation', 'party_affiliation');
 
         // Requests Array Logic (Compare as sets/JSON)
@@ -438,7 +449,6 @@ export default function PersonModal({
                                     >
                                         <option value="LOGISTICS">Logística</option>
                                         <option value="MEDICINE">Medicamentos</option>
-                                        <option value="FINANCIAL">Aporte</option>
                                         <option value="OTHER">Otro</option>
                                     </select>
                                     <select 
@@ -463,6 +473,7 @@ export default function PersonModal({
                                                 if (val) {
                                                     const newReq = {
                                                         type: newRequestType,
+                                                        detail: val,
                                                         subtypes: [val],
                                                         assignedUserId: newRequestAssignee || null,
                                                         status: 'PENDING'
@@ -482,6 +493,7 @@ export default function PersonModal({
                                             if (val) {
                                                 const newReq = {
                                                     type: newRequestType,
+                                                    detail: val,
                                                     subtypes: [val],
                                                     assignedUserId: newRequestAssignee || null,
                                                     status: 'PENDING'
@@ -529,8 +541,12 @@ export default function PersonModal({
                             <h3 className="text-xs font-bold text-emerald-500 flex items-center gap-2">¿💵? APORTE MONETARIO</h3>
                             <button 
                                 type="button" 
-                                onClick={() => setFormData({...formData, hasFinancialNeeds: !formData.hasFinancialNeeds})}
-                                className={`w-10 h-5 rounded-full relative transition-colors ${formData.hasFinancialNeeds ? "bg-emerald-500" : "bg-zinc-700"}`}
+                                onClick={() => {
+                                    if (financialLocked) return;
+                                    setFormData({...formData, hasFinancialNeeds: !formData.hasFinancialNeeds});
+                                }}
+                                disabled={financialLocked}
+                                className={`w-10 h-5 rounded-full relative transition-colors ${formData.hasFinancialNeeds ? "bg-emerald-500" : "bg-zinc-700"} ${financialLocked ? "opacity-60 cursor-not-allowed" : ""}`}
                             >
                                 <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${formData.hasFinancialNeeds ? "left-6" : "left-1"}`} />
                             </button>
@@ -538,25 +554,32 @@ export default function PersonModal({
 
                          {formData.hasFinancialNeeds && (
                              <div className="pl-4 border-l-2 border-emerald-900/30 space-y-3 animate-in slide-in-from-top-2">
-                                <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                                <label className="flex items-center gap-2 text-sm text-zinc-300">
                                     <input 
                                         type="checkbox" 
                                         checked={formData.financialNeedsFulfilled}
-                                        onChange={(e) => setFormData({...formData, financialNeedsFulfilled: e.target.checked})}
+                                        readOnly
+                                        disabled
                                         className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-emerald-500" 
                                     />
-                                    <span>¿Ya recibió el aporte? (Obtuvo)</span>
+                                    <span>?Ya recibi? el aporte? (Autom?tico al cerrar la actividad)</span>
                                 </label>
+                                {!formData.financialNeedsFulfilled && (
+                                    <p className="text-[11px] text-zinc-500">
+                                        Se marcar? autom?ticamente cuando completes la actividad financiera.
+                                    </p>
+                                )}
                                 
                                 {formData.financialNeedsFulfilled && (
                                     <div>
                                         <label className="block text-[10px] font-bold text-zinc-500 mb-1">MONTO ENTREGADO (Gs.)</label>
                                         <input 
                                             type="number" 
-                                            className="w-full bg-black border border-emerald-900/50 rounded p-2 text-white font-mono outline-none focus:border-emerald-500 text-right" 
+                                            className="w-full bg-black border border-emerald-900/50 rounded p-2 text-white font-mono outline-none text-right opacity-80" 
                                             placeholder="0"
                                             value={formData.financialAmount}
-                                            onChange={(e) => setFormData({...formData, financialAmount: Number(e.target.value)})}
+                                            readOnly
+                                            disabled
                                         />
                                     </div>
                                 )}

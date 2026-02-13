@@ -108,6 +108,9 @@ export default function ActivitiesPage() {
         if (t) setFinancialTaskToClose(t);
         return;
     }
+    if (taskType === 'FINANCIAL' && currentStatus) {
+        return; // Completed financial tasks cannot be unmarked
+    }
 
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed_at: currentStatus ? null : new Date().toISOString() } : t));
@@ -334,11 +337,18 @@ export default function ActivitiesPage() {
                 </div>
             ) : (
                 <div className="grid gap-3">
-                    {tasks.map(task => (
+                    {tasks.map(task => {
+                        const isLockedFinancial = task.task_type === 'FINANCIAL' && !!task.completed_at;
+                        return (
                         <div key={task.id} className="group bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex items-center gap-4 transition-all hover:border-zinc-700 hover:shadow-lg">
                             <button 
-                                onClick={() => toggleTaskCompletion(task.id, !!task.completed_at, task.task_type)}
-                                className={clsx("w-6 h-6 rounded-full border flex items-center justify-center transition-colors", task.completed_at ? "bg-emerald-500 border-emerald-500 text-white" : "border-zinc-600 text-transparent hover:border-emerald-500 group-hover:bg-zinc-800")}
+                                onClick={() => !isLockedFinancial && toggleTaskCompletion(task.id, !!task.completed_at, task.task_type)}
+                                disabled={isLockedFinancial}
+                                className={clsx(
+                                    "w-6 h-6 rounded-full border flex items-center justify-center transition-colors",
+                                    task.completed_at ? "bg-emerald-500 border-emerald-500 text-white" : "border-zinc-600 text-transparent hover:border-emerald-500 group-hover:bg-zinc-800",
+                                    isLockedFinancial && "opacity-60 cursor-not-allowed"
+                                )}
                             >
                                 <CheckCircle2 size={14} />
                             </button>
@@ -362,7 +372,8 @@ export default function ActivitiesPage() {
                                 {task.priority}
                             </span>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
          </div>

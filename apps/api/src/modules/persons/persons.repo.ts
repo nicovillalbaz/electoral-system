@@ -1,4 +1,5 @@
 import { query, pool } from "../../db/query";
+import { badRequest } from "../../common/http/errors";
 import { logEvent } from "../events/events.repo";
 import { taskCreate } from "../tasks/tasks.repo";
 import { createNotification } from "../notifications/notifications.repo";
@@ -158,6 +159,30 @@ export async function personsList(
     case "phone_number":
       orderByClause = "g.phone_number";
       break;
+    case "voting_table_number":
+      orderByClause = "g.voting_table_number";
+      break;
+    case "location_department":
+      orderByClause = "g.location_department";
+      break;
+    case "location_district":
+      orderByClause = "g.location_district";
+      break;
+    case "location_place":
+      orderByClause = "g.location_place";
+      break;
+    case "campaign_status":
+      orderByClause = "p.campaign_status";
+      break;
+    case "assigned_station_id":
+      orderByClause = "p.assigned_station_id";
+      break;
+    case "assigned_user_id":
+      orderByClause = "p.assigned_user_id";
+      break;
+    case "financial_amount":
+      orderByClause = "p.financial_amount";
+      break;
     case "current_vote_intent":
       orderByClause = "p.current_vote_intent";
       break;
@@ -186,6 +211,11 @@ export async function personsList(
         p.financial_needs_fulfilled,
         p.financial_amount,
         p.assigned_station_id,
+        p.assigned_user_id,
+        p.exact_address,
+        p.whatsapp_number,
+        p.status_day_d,
+        p.station_checkin_at,
         -----------------------------------------
 
         g.document_id, 
@@ -193,6 +223,9 @@ export async function personsList(
         g.last_name, 
         g.address, 
         g.party_affiliation, 
+        g.party_affiliation_date,
+        g.birthdate,
+        g.sex,
         g.voting_order_number, 
         g.phone_number, 
         g.voting_table_number,
@@ -292,6 +325,8 @@ export async function personCreate(campaignId: string, data: any) {
           citizen_id,
           current_vote_intent,
           notes,
+          exact_address,
+          whatsapp_number,
           campaign_status,
           assigned_station_id,
           assigned_user_id,
@@ -303,7 +338,7 @@ export async function personCreate(campaignId: string, data: any) {
           transport_status,
           created_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, NOW())
        ON CONFLICT (campaign_id, citizen_id) DO UPDATE SET updated_at = NOW()
        RETURNING id, campaign_id, current_vote_intent, notes`,
       [
@@ -311,6 +346,8 @@ export async function personCreate(campaignId: string, data: any) {
         citizenId,
         data.currentVoteIntent ?? "UNDECIDED",
         data.notes ?? null,
+        data.exactAddress ?? null,
+        data.whatsappNumber ?? null,
         campaignStatus,
         assignedStationId,
         assignedUserId,
@@ -355,6 +392,7 @@ export async function personUpdate(
     const currentRes = await client.query(
       `SELECT p.current_vote_intent, p.notes, p.campaign_status, 
                 p.needs_transport, p.transport_status, p.exact_address, p.whatsapp_number, p.assigned_station_id, p.assigned_user_id,
+                p.has_financial_needs, p.financial_needs_fulfilled,
                 g.phone_number, g.address, g.location_place, g.first_name, g.last_name
          FROM persons p
          JOIN global_citizens g ON p.citizen_id = g.id
@@ -367,6 +405,10 @@ export async function personUpdate(
       return null;
     }
     const before = currentRes.rows[0];
+
+    if (patch.hasFinancialNeeds === false && before.financial_needs_fulfilled) {
+      throw badRequest("No se puede desactivar un aporte ya entregado.");
+    }
 
     // 2. Actualizar Global Citizens (Datos Personales Básicos y Barrio y AFILIACIÓN)
     if (
@@ -402,7 +444,6 @@ export async function personUpdate(
       // Nuevos
       patch.requests !== undefined ||
       patch.hasFinancialNeeds !== undefined ||
-      patch.financialNeedsFulfilled !== undefined ||
       patch.financialAmount !== undefined ||
       patch.assignedUserId !== undefined
     ) {
@@ -420,12 +461,11 @@ export async function personUpdate(
              -- Nuevos Campos
              requests = COALESCE($9, requests),
              has_financial_needs = COALESCE($10, has_financial_needs),
-             financial_needs_fulfilled = COALESCE($11, financial_needs_fulfilled),
-             financial_amount = COALESCE($12, financial_amount),
-             assigned_user_id = COALESCE($13, assigned_user_id),
+             financial_amount = COALESCE($11, financial_amount),
+             assigned_user_id = COALESCE($12, assigned_user_id),
 
              updated_at = NOW()
-         WHERE id = $14 AND campaign_id = $15`,
+         WHERE id = $13 AND campaign_id = $14`,
         [
           sanitize(patch.currentVoteIntent), 
           patch.notes,
@@ -438,7 +478,6 @@ export async function personUpdate(
           
           patch.requests ? JSON.stringify(patch.requests) : null, // Assuming patch.requests is array or null
           patch.hasFinancialNeeds,
-          patch.financialNeedsFulfilled,
           patch.financialAmount,
           sanitize(patch.assignedUserId),
 
@@ -499,9 +538,6 @@ export async function personUpdate(
             });
          }
     }
-    if (patch.financialNeedsFulfilled !== undefined && patch.financialNeedsFulfilled !== before.financial_needs_fulfilled) {
-         changes.push(patch.financialNeedsFulfilled ? "Aporte Entregado" : "Aporte Pendiente");
-    }
     if (patch.financialAmount !== undefined && patch.financialAmount !== before.financial_amount) {
          changes.push(`Monto Aporte: ${patch.financialAmount}`);
     }
@@ -510,7 +546,16 @@ export async function personUpdate(
          const newReqs = patch.requests as any[]; // Array of { type, detail, assignedUserId, ... } or strings
 
          // Helper to unify format
-         const normalize = (r: any) => typeof r === 'string' ? { type: 'LOGISTICS', detail: r } : r;
+         const normalize = (r: any) => {
+           if (typeof r === 'string') return { type: 'LOGISTICS', detail: r };
+           const detail =
+             r?.detail ??
+             (Array.isArray(r?.subtypes) ? r.subtypes.filter(Boolean).join(", ") : r?.subtypes) ??
+             r?.description ??
+             r?.value ??
+             "";
+           return { ...r, type: r?.type || 'LOGISTICS', detail };
+         };
          
          // Find strictly new requests (not present in old)
          // We use JSON stringify for simple object comparison
@@ -520,13 +565,17 @@ export async function personUpdate(
 
          for (const req of addedReqs) {
              const n = normalize(req);
-             changes.push(`Solicitó (${n.type}): ${n.detail}`);
+             const detailText = n.detail || "Sin detalle";
+             changes.push(`Solicitó (${n.type}): ${detailText}`);
              
              // AUTOMATIC TASK CREATION
              if (n.assignedUserId && actorUserId) {
+                 const phone = patch.phoneNumber ?? before.phone_number ?? 'N/A';
+                 const address = patch.address ?? before.address ?? 'N/A';
+                 const exact = patch.exactAddress ?? before.exact_address ?? '';
                  await taskCreate(campaignId, actorUserId, {
-                     title: `${n.type}: ${n.detail} (${before.first_name} ${before.last_name})`,
-                     description: `Solicitud asignada desde asignación directa.\n\nDetalle: ${n.detail}\nCategoría: ${n.type}\n\nDatos de Contacto:\nCel: ${before.phone_number || 'N/A'}\nDir: ${before.address || 'N/A'}\nRef: ${before.exact_address || ''}`,
+                     title: `${n.type}: ${detailText} (${before.first_name} ${before.last_name})`,
+                     description: `Solicitud asignada desde asignación directa.\n\nDetalle: ${detailText}\nCategoría: ${n.type}\n\nDatos de Contacto:\nCel: ${phone}\nDir: ${address}\nRef: ${exact}`,
                      priority: 'URGENT',
                      taskType: 'LOGISTICS',
                      dueDate: new Date(), // Today
@@ -767,15 +816,16 @@ export async function personsBulkUpdate(
     // ADD TAG
     if (updates.add_tag) {
          const pIdx = baseParams.length + 1;
+         const pIdxAssigned = pIdx + 1;
          const sql = `
-           INSERT INTO person_tags (person_id, tag_id)
-           SELECT p.id, $${pIdx}
+           INSERT INTO person_tags (campaign_id, person_id, tag_id, assigned_by_user_id)
+           SELECT $1, p.id, $${pIdx}, $${pIdxAssigned}
            FROM persons p
            JOIN global_citizens g ON p.citizen_id = g.id
            WHERE p.campaign_id = $1 AND ${baseCondition}
            ON CONFLICT DO NOTHING
         `;
-        await client.query(sql, [...baseParams, updates.add_tag]);
+        await client.query(sql, [...baseParams, updates.add_tag, actorUserId || null]);
     }
 
     // ADD NOTE
@@ -806,15 +856,24 @@ export async function personsBulkUpdate(
     // FINANCIAL AMOUNT
     if (updates.financial_amount !== undefined) {
          const pIdx = baseParams.length + 1;
+         const amountRaw = updates.financial_amount;
+         const amount =
+           amountRaw === "" || amountRaw === null || amountRaw === undefined
+             ? 0
+             : Number(amountRaw);
+         if (Number.isNaN(amount)) {
+           throw new Error("Invalid financial_amount");
+         }
          const sql = `
            UPDATE persons p
-           SET financial_amount = $${pIdx}, 
-               has_financial_needs = ($${pIdx} > 0), 
+           SET financial_amount = $${pIdx}::numeric, 
+               has_financial_needs = ($${pIdx}::numeric > 0), 
+               financial_needs_fulfilled = ($${pIdx}::numeric > 0),
                updated_at = NOW()
            FROM global_citizens g
            WHERE p.citizen_id = g.id AND p.campaign_id = $1 AND ${baseCondition}
         `;
-        await client.query(sql, [...baseParams, updates.financial_amount]);
+        await client.query(sql, [...baseParams, amount]);
     }
 
     // Count is hard to get exactly if multiple updates... estimate from first?

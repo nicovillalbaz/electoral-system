@@ -73,7 +73,7 @@ export async function eventsRoutes(app: FastifyInstance) {
         if ((stillChecked.rowCount ?? 0) === 0) {
           await query(
             `UPDATE persons 
-             SET status_day_d = $3, updated_at = NOW()
+             SET status_day_d = $3::day_d_status_enum, updated_at = NOW()
              WHERE id=$1 AND campaign_id=$2`,
             [ev.person_id, req.user.campaignId, payload.previousStatusDayD || 'PENDING']
           );

@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from "react";
-import { Check, User, MapPin, Truck, AlertTriangle, DollarSign, ChevronDown, CheckCircle, X, Flag, Vote, Save } from "lucide-react";
+import { Check, User, MapPin, Truck, AlertTriangle, DollarSign, CheckCircle, Vote, X } from "lucide-react";
 import safeApi from "../../../../lib/api";
 
 type Voter = {
@@ -16,6 +16,7 @@ type Voter = {
     assigned_station_id?: string;
     current_vote_intent?: string;
     has_financial_needs?: boolean;
+    financial_needs_fulfilled?: boolean;
     financial_amount?: number;
     notes?: string;
     requests?: any[];
@@ -23,7 +24,6 @@ type Voter = {
 
 type Props = {
     voter: Voter;
-    onSelect: () => void;
     onUpdate: (updatedVoter: any) => void;
     stations: any[]; // List of Available PCs
 };
@@ -46,17 +46,18 @@ const statusLabels: any = {
     VOTED: "YA VOTÓ"
 };
 
-const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
+const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
     const [openPopover, setOpenPopover] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
     // Temp State for Inputs
     const [tempStationId, setTempStationId] = useState("");
-    const [tempPassedPC, setTempPassedPC] = useState(false);
-    
-    const [tempFinance, setTempFinance] = useState({ active: false, amount: 0 });
+    const [tempFinanceAmount, setTempFinanceAmount] = useState(0);
     const [tempNotes, setTempNotes] = useState("");
-    const [tempLogistics, setTempLogistics] = useState<{subtypes: string[], responsible: string}>({ subtypes: [], responsible: "" });
+    const [tempRequests, setTempRequests] = useState<any[]>([]);
+    const [newRequestDetail, setNewRequestDetail] = useState("");
+    const [newRequestType, setNewRequestType] = useState("LOGISTICS");
+    const [newRequestAssignee, setNewRequestAssignee] = useState("");
     
     // Users for Logistics
     const [userOptions, setUserOptions] = useState<any[]>([]);
@@ -80,29 +81,24 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
 
         if (openPopover === 'PC') {
             setTempStationId(voter.assigned_station_id || "");
-            setTempPassedPC(voter.campaign_status === 'VISITED_PC' || !!voter.station_checkin_at);
         }
         if (openPopover === 'FINANCE') {
-            setTempFinance({ 
-                active: voter.has_financial_needs || false, 
-                amount: voter.financial_amount || 0 
-            });
+            setTempFinanceAmount(voter.financial_amount ? Number(voter.financial_amount) : 0);
         }
         if (openPopover === 'NOTES') {
             setTempNotes(voter.notes || "");
         }
         if (openPopover === 'LOGISTICS') {
-            const requests = voter.requests || [];
-            const logReq = requests.find((r:any) => r.type === 'LOGISTICS');
-            setTempLogistics({
-                subtypes: logReq?.subtypes || [],
-                responsible: logReq?.assignedUserId || logReq?.responsible || "" // Prefer ID
-            });
+            setTempRequests(Array.isArray(voter.requests) ? voter.requests : []);
+            setNewRequestType("LOGISTICS");
+            setNewRequestDetail("");
+            setNewRequestAssignee("");
             
             // Load users if not loaded
             if (!usersLoaded) {
                 safeApi.get('/users?limit=100').then(res => {
-                    setUserOptions(res.data.data || []);
+                    const data = Array.isArray(res.data) ? res.data : (res.data.data || []);
+                    setUserOptions(data);
                     setUsersLoaded(true);
                 }).catch(() => {});
             }
@@ -111,54 +107,25 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
 
 
     const handleSave = async () => {
+        if (loading) return;
         setLoading(true);
         const patch: any = {};
-        let shouldClose = true;
 
         try {
-            if (openPopover === 'PC') {
-                patch.assignedStationId = tempStationId;
-                if (tempPassedPC) {
-                    patch.campaignStatus = 'VISITED_PC';
-                } else if (!tempPassedPC && voter.campaign_status === 'VISITED_PC') {
-                    patch.campaignStatus = 'NOT_VISITED';
-                }
-            }
-
-            if (openPopover === 'FINANCE') {
-                patch.hasFinancialNeeds = tempFinance.active;
-                patch.financialAmount = tempFinance.amount;
-            }
-
             if (openPopover === 'NOTES') {
                 patch.notes = tempNotes;
             }
 
             if (openPopover === 'LOGISTICS') {
-                const requests = voter.requests ? [...voter.requests] : [];
-                // Remove existing logistics
-                const otherRequests = requests.filter((r:any) => r.type !== 'LOGISTICS');
-                
-                if (tempLogistics.subtypes.length > 0) {
-                    const selectedUser = userOptions.find(u => u.id === tempLogistics.responsible);
-                    otherRequests.push({ 
-                        type: 'LOGISTICS', 
-                        subtypes: tempLogistics.subtypes, 
-                        responsible: selectedUser ? selectedUser.full_name : tempLogistics.responsible,
-                        assignedUserId: selectedUser ? selectedUser.id : undefined // <--- Add ID
-                    });
-                }
-                patch.requests = otherRequests;
-                // Update flag as well for visual consistency if backend doesn't do it automatically immediately
-                // patch.logistics_flag = tempLogistics.subtypes.length > 0; 
+                patch.requests = tempRequests;
+            }
+
+            if (Object.keys(patch).length === 0) {
+                setOpenPopover(null);
+                return;
             }
 
             await safeApi.patch(`/persons/${voter.id}`, patch);
-
-            // Manual trigger for checkin if needed
-            if (patch.campaignStatus === 'VISITED_PC' && patch.assignedStationId) {
-                await safeApi.post('/stations/checkin', { personId: voter.id, stationId: patch.assignedStationId });
-            }
 
             onUpdate({ ...voter, ...patch }); // Optimistic
             setOpenPopover(null);
@@ -166,10 +133,90 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
         } catch (e) {
             console.error(e);
             alert("Error al guardar cambios. Intente nuevamente.");
-            shouldClose = false;
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleMarkPC = async () => {
+        if (loading) return;
+        const alreadyPassed = voter.campaign_status === 'VISITED_PC' || !!voter.station_checkin_at || voter.status_day_d === 'CHECKED_IN';
+        if (alreadyPassed) {
+            setOpenPopover(null);
+            return;
+        }
+        if (voter.status_day_d === 'VOTED') {
+            alert("Esta persona ya figura como VOTO. No se puede marcar paso por PC.");
+            return;
+        }
+        if (!tempStationId) {
+            alert("Asigna un PC antes de registrar el paso.");
+            return;
+        }
+        setLoading(true);
+        try {
+            const patch: any = { assignedStationId: tempStationId, campaignStatus: 'VISITED_PC' };
+            await safeApi.patch(`/persons/${voter.id}`, patch);
+            await safeApi.post('/stations/checkin', { personId: voter.id, stationId: tempStationId });
+            onUpdate({ 
+                ...voter, 
+                assigned_station_id: tempStationId, 
+                campaign_status: 'VISITED_PC',
+                status_day_d: 'CHECKED_IN'
+            });
+            setOpenPopover(null);
+        } catch (e) {
+            console.error(e);
+            alert("Error al registrar paso por PC.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleFinanceSave = async () => {
+        if (loading) return;
+        if (voter.financial_needs_fulfilled) {
+            setOpenPopover(null);
+            return;
+        }
+        const amount = Number(tempFinanceAmount);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            alert("Ingrese un monto válido.");
+            return;
+        }
+        setLoading(true);
+        try {
+            await safeApi.post('/voting/financial', { personId: voter.id, amount });
+            onUpdate({ 
+                ...voter, 
+                has_financial_needs: true, 
+                financial_amount: amount, 
+                financial_needs_fulfilled: true 
+            });
+            setOpenPopover(null);
+        } catch (e) {
+            console.error(e);
+            alert("Error al registrar viático.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const addRequest = () => {
+        const val = newRequestDetail.trim();
+        if (!val) return;
+        const selectedUser = userOptions.find(u => u.id === newRequestAssignee);
+        const newReq = {
+            type: newRequestType,
+            detail: val,
+            subtypes: [val],
+            assignedUserId: newRequestAssignee || null,
+            responsible: selectedUser ? selectedUser.full_name : undefined,
+            status: 'PENDING'
+        };
+        setTempRequests((prev) => [...prev, newReq]);
+        setNewRequestDetail("");
+        setNewRequestAssignee("");
     };
 
     const handleVoteStatusChange = async (newStatus: string) => {
@@ -203,16 +250,19 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
     // --- RENDER HELPERS ---
     const getPCStatus = () => {
         const hasPC = !!voter.assigned_station_id;
-        const passed = voter.campaign_status === 'VISITED_PC' || !!voter.station_checkin_at;
+        const passed = voter.campaign_status === 'VISITED_PC' || !!voter.station_checkin_at || voter.status_day_d === 'CHECKED_IN';
         return { hasPC, passed };
     };
     const pcStat = getPCStatus();
+    const financeLocked = !!voter.financial_needs_fulfilled;
+    const financeRequested = !!voter.has_financial_needs;
+    const hasLogistics = (Array.isArray(voter.requests) && voter.requests.length > 0) || !!voter.logistics_flag;
 
     return (
         <div ref={rowRef} className={`relative flex items-center p-3 border-b border-white/5 hover:bg-white/5 transition-colors group ${voter.status_day_d === 'VOTED' ? 'bg-emerald-900/10' : ''}`}>
             
             {/* 1. Main Click Area (Name) */}
-            <div onClick={onSelect} className="flex-1 flex items-center cursor-pointer min-w-0 mr-4">
+            <div className="flex-1 flex items-center min-w-0 mr-4">
                  
                  {/* Status Badge (Static) */}
                  <div className={`w-24 flex-shrink-0 text-[10px] font-bold px-2 py-1 rounded border border-transparent mr-4 text-center transition-colors ${statusColors[voter.status_day_d] || 'bg-zinc-900'}`}>
@@ -276,29 +326,34 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                         <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-3 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
                             <label className="text-xs font-bold text-zinc-500">ASIGNAR PC</label>
                             <select 
-                                className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
+                                disabled={pcStat.passed}
+                                className={`w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white ${pcStat.passed ? 'opacity-60 cursor-not-allowed' : ''}`}
                                 value={tempStationId}
                                 onChange={(e) => setTempStationId(e.target.value)}
                             >
                                 <option value="">-- Sin Asignar --</option>
                                 {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
-                            <div className="flex justify-between items-center bg-zinc-950 p-2 rounded border border-zinc-800">
-                                <span className="text-xs font-bold text-zinc-400">YA PASÓ POR PC?</span>
-                                <button 
-                                    onClick={() => setTempPassedPC(!tempPassedPC)}
-                                    className={`px-3 py-1 rounded text-xs font-bold transition-colors ${tempPassedPC ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-500'}`}
-                                >
-                                    {tempPassedPC ? 'SÍ, PASÓ' : 'NO'}
-                                </button>
-                            </div>
-                            <button 
-                                onClick={handleSave}
-                                disabled={loading}
-                                className="w-full bg-white text-black font-bold text-xs py-2 rounded hover:bg-zinc-200 flex justify-center items-center gap-2"
-                            >
-                                {loading ? '...' : 'GUARDAR CAMBIOS'} <Check size={14} />
-                            </button>
+                            {pcStat.passed ? (
+                                <div className="text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded p-2 text-center">
+                                    YA PASO POR PC
+                                </div>
+                            ) : (
+                                <>
+                                    {!tempStationId && (
+                                        <div className="text-[11px] text-zinc-500">
+                                            Asigna un PC para marcar el paso.
+                                        </div>
+                                    )}
+                                    <button 
+                                        onClick={handleMarkPC}
+                                        disabled={loading || !tempStationId}
+                                        className="w-full bg-white text-black font-bold text-xs py-2 rounded hover:bg-zinc-200 flex justify-center items-center gap-2 disabled:opacity-60"
+                                    >
+                                        {loading ? '...' : 'MARCAR PASO POR PC'} <Check size={14} />
+                                    </button>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>
@@ -340,37 +395,52 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                 <div className="relative">
                     <button 
                         onClick={(e) => togglePopover('FINANCE', e)}
-                        className={`p-2 rounded-lg transition-colors ${voter.has_financial_needs ? 'text-green-400 bg-green-500/10' : 'text-zinc-600 hover:bg-white/10'}`}
+                        className={`p-2 rounded-lg transition-colors ${
+                            financeLocked ? 'text-emerald-400 bg-emerald-500/10' :
+                            financeRequested ? 'text-yellow-400 bg-yellow-500/10' :
+                            'text-zinc-600 hover:bg-white/10'
+                        }`}
                     >
                         <DollarSign size={16} />
                     </button>
                     {openPopover === 'FINANCE' && (
                         <div className="absolute right-0 top-full mt-2 w-56 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-3 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                             <div className="flex justify-between">
-                                <span className="text-xs font-bold text-zinc-400">Solicita Viático?</span>
-                                <input 
-                                    type="checkbox" 
-                                    checked={tempFinance.active} 
-                                    onChange={(e) => setTempFinance({ ...tempFinance, active: e.target.checked })}
-                                    className="accent-emerald-500"
-                                />
-                             </div>
-                             {tempFinance.active && (
-                                 <input 
-                                     type="number" 
-                                     placeholder="Monto Gs."
-                                     className="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
-                                     value={tempFinance.amount}
-                                     onChange={(e) => setTempFinance({ ...tempFinance, amount: Number(e.target.value) })}
-                                 />
+                             <div className="text-xs font-bold text-zinc-400">SOLICITUD VIATICO</div>
+                             {financeLocked ? (
+                                 <div className="space-y-2">
+                                     <div className="text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded p-2 text-center">
+                                         APORTE ENTREGADO
+                                     </div>
+                                     <div>
+                                         <label className="block text-[10px] font-bold text-zinc-500 mb-1">MONTO ENTREGADO (Gs.)</label>
+                                         <input 
+                                             type="number" 
+                                             className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white opacity-80"
+                                             value={tempFinanceAmount}
+                                             readOnly
+                                             disabled
+                                         />
+                                     </div>
+                                 </div>
+                             ) : (
+                                 <>
+                                     <label className="text-xs font-bold text-zinc-400">MONTO (Gs.)</label>
+                                     <input 
+                                         type="number" 
+                                         placeholder="Monto"
+                                         className="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
+                                         value={tempFinanceAmount}
+                                         onChange={(e) => setTempFinanceAmount(Number(e.target.value))}
+                                     />
+                                     <button 
+                                        onClick={handleFinanceSave}
+                                        disabled={loading}
+                                        className="w-full bg-white text-black font-bold text-xs py-2 rounded hover:bg-zinc-200 flex justify-center items-center gap-2 disabled:opacity-60"
+                                    >
+                                        {loading ? '...' : 'REGISTRAR Y MARCAR ENTREGADO'} <Check size={14} />
+                                    </button>
+                                 </>
                              )}
-                             <button 
-                                onClick={handleSave}
-                                disabled={loading}
-                                className="w-full bg-white text-black font-bold text-xs py-2 rounded hover:bg-zinc-200 flex justify-center items-center gap-2"
-                            >
-                                {loading ? '...' : 'GUARDAR'} <Check size={14} />
-                            </button>
                         </div>
                     )}
                 </div>
@@ -379,51 +449,76 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
                 <div className="relative">
                     <button 
                         onClick={(e) => togglePopover('LOGISTICS', e)}
-                        className={`p-2 rounded-lg transition-colors ${voter.logistics_flag ? 'text-blue-400 bg-blue-500/10' : 'text-zinc-600 hover:bg-white/10'}`}
+                        className={`p-2 rounded-lg transition-colors ${hasLogistics ? 'text-blue-400 bg-blue-500/10' : 'text-zinc-600 hover:bg-white/10'}`}
                     >
                         <Truck size={16} />
                     </button>
-                     {openPopover === 'LOGISTICS' && (
-                        <div className="absolute right-0 top-full mt-2 w-64 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-3 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                             <label className="text-xs font-bold text-zinc-500">LOGÍSTICA REQUERIDA</label>
-                             <div className="grid grid-cols-2 gap-2 mb-2">
-                                {[
-                                    { id: 'FUEL', label: 'COMBUSTIBLE' },
-                                    { id: 'TRANSPORT', label: 'TRANSPORTE' },
-                                    { id: 'SNACK', label: 'REFRIGERIO' },
-                                    { id: 'ACCOMPANIMENT', label: 'ACOMPAÑAMIENTO' },
-                                ].map(t => {
-                                    const isActive = tempLogistics.subtypes.includes(t.id);
-                                    
-                                    return (
-                                        <button 
-                                            key={t.id}
-                                            onClick={() => {
-                                                const newSubtypes = isActive 
-                                                    ? tempLogistics.subtypes.filter(x => x !== t.id) 
-                                                    : [...tempLogistics.subtypes, t.id];
-                                                setTempLogistics({ ...tempLogistics, subtypes: newSubtypes });
-                                            }}
-                                            className={`text-[10px] font-bold p-2 rounded border ${isActive ? 'bg-blue-900/40 border-blue-500 text-blue-300' : 'border-zinc-800 text-zinc-500'}`}
-                                        >
-                                            {t.label}
-                                        </button>
-                                    )
-                                })}
-                             </div>
-                             
-                              {/* Responsible Field */}
-                              {(tempLogistics.subtypes.length > 0) && (
+                    {openPopover === 'LOGISTICS' && (
+                        <div className="absolute right-0 top-full mt-2 w-72 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-3 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                             <label className="text-xs font-bold text-zinc-500">PEDIDOS / LOGISTICA</label>
+                             <div className="flex gap-2">
                                  <select 
-                                     className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-xs text-white placeholder:text-zinc-600 focus:border-blue-500 outline-none"
-                                     value={tempLogistics.responsible}
-                                     onChange={(e) => setTempLogistics({ ...tempLogistics, responsible: e.target.value })}
+                                     className="bg-black border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none"
+                                     value={newRequestType}
+                                     onChange={e => setNewRequestType(e.target.value)}
                                  >
-                                     <option value="">-- Asignar Responsable --</option>
-                                     {userOptions.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                                     <option value="LOGISTICS">Logistica</option>
+                                     <option value="MEDICINE">Medicamentos</option>
+                                     <option value="OTHER">Otro</option>
                                  </select>
-                              )}
+                                 <select 
+                                     className="flex-1 bg-black border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none"
+                                     value={newRequestAssignee}
+                                     onChange={e => setNewRequestAssignee(e.target.value)}
+                                 >
+                                     <option value="">-- Asignar Responsable (Opcional) --</option>
+                                     {userOptions.map(u => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
+                                 </select>
+                             </div>
+                             <div className="flex gap-2">
+                                 <input 
+                                     className="flex-1 bg-black border border-zinc-700 rounded px-2 py-1 text-sm text-white outline-none placeholder-zinc-600"
+                                     placeholder="Detalle (Ej: Combustible, Remedios...)"
+                                     value={newRequestDetail}
+                                     onChange={(e) => setNewRequestDetail(e.target.value)}
+                                     onKeyDown={(e) => {
+                                         if (e.key === "Enter") {
+                                             e.preventDefault();
+                                             addRequest();
+                                         }
+                                     }}
+                                 />
+                                 <button 
+                                     type="button" 
+                                     className="text-xs font-bold bg-zinc-800 px-3 rounded hover:bg-zinc-700 text-white"
+                                     onClick={addRequest}
+                                 >
+                                     AGREGAR
+                                 </button>
+                             </div>
+                             <div className="max-h-40 overflow-y-auto space-y-1">
+                                 {tempRequests.length === 0 && <p className="text-xs text-zinc-600 italic text-center py-2">- Sin pedidos registrados -</p>}
+                                 {tempRequests.map((req, idx) => {
+                                     const isString = typeof req === 'string';
+                                     const detail = isString ? req : (req.detail || (Array.isArray(req.subtypes) ? req.subtypes.join(", ") : ""));
+                                     const type = isString ? 'LOGISTICS' : req.type;
+                                     const assigneeId = isString ? null : req.assignedUserId;
+                                     const assigneeName = assigneeId ? userOptions.find(u => u.id === assigneeId)?.full_name : (isString ? null : req.responsible);
 
+                                     return (
+                                         <div key={idx} className="flex justify-between items-center text-sm bg-zinc-950/50 px-2 py-1.5 rounded border border-zinc-800/50">
+                                             <div className="flex flex-col leading-tight">
+                                                 <span className="text-zinc-300">
+                                                     <span className="text-[10px] bg-zinc-800 px-1 rounded mr-2 text-zinc-400">{type}</span>
+                                                     {detail}
+                                                 </span>
+                                                 {assigneeName && <span className="text-[10px] text-blue-400 pl-1">Resp: {assigneeName}</span>}
+                                             </div>
+                                             <button type="button" onClick={() => setTempRequests(prev => prev.filter((_, i) => i !== idx))} className="text-red-500 hover:bg-red-950/30 p-1 rounded"><X size={12} /></button>
+                                         </div>
+                                     );
+                                 })}
+                             </div>
                             <button 
                                 onClick={handleSave}
                                 disabled={loading}
@@ -471,3 +566,6 @@ const VoterRow = memo(({ voter, onSelect, onUpdate, stations }: Props) => {
 VoterRow.displayName = "VoterRow";
 
 export default VoterRow;
+
+
+

@@ -219,6 +219,14 @@ export async function listGetMembers(campaignId: string, listId: string, limit: 
         p.campaign_status,     -- Importante para colorear
         p.needs_transport,     -- Importante para logística
         p.transport_status,
+        p.has_financial_needs,
+        p.financial_needs_fulfilled,
+        p.financial_amount,
+        p.exact_address,
+        p.whatsapp_number,
+        p.assigned_station_id,
+        p.assigned_user_id,
+        p.requests,
         p.notes,
         g.document_id, 
         g.first_name, 

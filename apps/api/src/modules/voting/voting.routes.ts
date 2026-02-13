@@ -11,6 +11,7 @@ import {
     updateDayDStatus 
 } from "./voting.repo";
 import { logEvent } from "../events/events.repo";
+import { taskCompleteWithExpense } from "../tasks/tasks.repo";
 
 export async function votingRoutes(app: FastifyInstance) {
   app.post("/mark-voted", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR","STATION_MANAGER","OPERATOR"])] }, async (req: any) => {
@@ -85,21 +86,41 @@ export async function votingRoutes(app: FastifyInstance) {
   });
 
   // 2. Trigger Logística/Viático
-  app.post("/financial", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR"])] }, async (req: any) => {
+  app.post("/financial", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR","OPERATOR"])] }, async (req: any) => {
     const body = z.object({
         personId: z.string().uuid(),
         notes: z.string().optional(),
         assignedUserId: z.string().uuid().optional(),
+        amount: z.coerce.number().min(0).optional(),
+        concept: z.string().optional(),
     }).parse(req.body);
 
-    const task = await createFinancialTask(req.user.campaignId, req.user.userId, body);
+    const notes = [
+      body.notes?.trim(),
+      body.amount !== undefined ? `Monto: ${body.amount} Gs.` : null
+    ].filter(Boolean).join("\n");
+
+    const task = await createFinancialTask(req.user.campaignId, req.user.userId, {
+      personId: body.personId,
+      notes: notes || undefined,
+      assignedUserId: body.assignedUserId
+    });
+
+    if (body.amount !== undefined) {
+      const concept = body.concept?.trim() || "Viático Día D";
+      await taskCompleteWithExpense(req.user.campaignId, task.id, {
+        amount: body.amount,
+        concept,
+        userId: req.user.userId
+      });
+    }
 
     await logEvent({
       campaignId: req.user.campaignId,
       eventType: "FINANCIAL_REQUESTED",
       actorUserId: req.user.userId,
       personId: body.personId,
-      payload: { notes: body.notes },
+      payload: { notes: body.notes, amount: body.amount },
     });
 
     return task;

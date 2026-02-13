@@ -299,14 +299,13 @@ export default function BulkUpdateModal({ isOpen, onClose, onSuccess, activeFilt
                              <h3 className="text-xs font-bold text-blue-500">AGREGAR PEDIDO</h3>
                         </div>
                         <div className="space-y-2">
-                             <select 
+                            <select 
                                 className="w-full bg-black border border-zinc-700 rounded p-2 text-white outline-none disabled:cursor-not-allowed" 
                                 value={requestType} 
                                 onChange={e => setRequestType(e.target.value)}
                                 disabled={!enabledFields['add_request']}
                             >
                                 <option value="LOGISTICS">Logística</option>
-                                <option value="FINANCIAL">Ayuda Económica</option>
                                 <option value="MEDICINE">Medicamentos</option>
                                 <option value="OTHER">Otro</option>
                             </select>

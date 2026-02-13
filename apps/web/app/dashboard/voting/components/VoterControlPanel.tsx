@@ -60,7 +60,10 @@ export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterCon
     // Load PCs & Users
     useEffect(() => {
         safeApi.get('/stations').then(res => setStationOptions(res.data)).catch(() => {});
-        safeApi.get('/users?limit=100').then(res => setUserOptions(res.data.data)).catch(() => {});
+        safeApi.get('/users?limit=100').then(res => {
+            const data = Array.isArray(res.data) ? res.data : (res.data.data || []);
+            setUserOptions(data);
+        }).catch(() => {});
     }, []);
 
 

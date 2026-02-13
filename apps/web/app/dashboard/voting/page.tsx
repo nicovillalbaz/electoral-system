@@ -3,12 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 // Usamos safe api wrapper por si acaso, pero en apps/web/lib/api.ts debería estar exportado default
 import safeApi from "../../../lib/api"; 
-import { addToQueue } from "../../../lib/offline-queue";
 
-import { Search, Siren, Truck, Zap } from "lucide-react";
+import { Search, Siren } from "lucide-react";
 import VoterRow from "./components/VoterRow";
 import CrisisModal from "../components/CrisisModal";
-import VoterControlPanel from "./components/VoterControlPanel"; // <--- Correct Placement
 import { useDebounce } from "use-debounce";
 
 export default function DayDPage() {
@@ -24,8 +22,6 @@ export default function DayDPage() {
       safeApi.get('/stations').then(res => setStations(res.data)).catch(() => {});
   }, []);
 
-  // New State for Selection
-  const [selectedVoter, setSelectedVoter] = useState<any | null>(null);
 
   const loadGrid = useCallback(async () => {
     setLoading(true);
@@ -49,7 +45,6 @@ export default function DayDPage() {
   useEffect(() => {
      if (query.length < 3) {
          setVoters([]);
-         setSelectedVoter(null);
      }
   }, [query]);
 
@@ -87,14 +82,6 @@ export default function DayDPage() {
           // Silent fail
       }
   }
-
-  const handleSelectVoter = (v: any) => {
-      setSelectedVoter(v);
-  };
-
-  const handleBackToSearch = () => {
-      setSelectedVoter(null);
-  };
 
   const [showCrisis, setShowCrisis] = useState(false);
 
@@ -143,21 +130,6 @@ export default function DayDPage() {
                 {/* Left: Voter Operations */}
                 <div className="flex-1 overflow-y-auto bg-zinc-950 p-4">
                      
-                     {selectedVoter ? (
-                         <div className="max-w-3xl mx-auto h-full">
-                             <button onClick={handleBackToSearch} className="mb-2 text-sm text-zinc-500 hover:text-white flex items-center gap-1">
-                                 &larr; VOLVER A RESULTADOS
-                             </button>
-                             <VoterControlPanel 
-                                voter={selectedVoter} 
-                                onClose={handleBackToSearch} 
-                                onUpdate={(updated) => { 
-                                    if(updated) setSelectedVoter(updated);
-                                    loadGrid(); 
-                                }}
-                            />
-                         </div>
-                     ) : (
                         <div className="max-w-4xl mx-auto space-y-4">
                             {voters.length > 0 && (
                                 <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-2">Resultados ({voters.length})</h3>
@@ -167,7 +139,6 @@ export default function DayDPage() {
                                 <div key={v.id}> 
                                     <VoterRow 
                                         voter={v} 
-                                        onSelect={() => handleSelectVoter(v)}
                                         onUpdate={(updated) => {
                                             if(updated) {
                                                 setVoters(prev => prev.map(p => p.id === updated.id ? {...p, ...updated} : p));
@@ -182,11 +153,10 @@ export default function DayDPage() {
                                 <div className="flex flex-col items-center justify-center p-20 text-zinc-800 opacity-50">
                                     <Search size={64} className="mb-4 text-zinc-900"/>
                                     <p className="text-xl font-black">INGRESA CEDULA O APELLIDO</p>
-                                    <p className="text-sm">Para acceder al panel de control del elector</p>
+                                    <p className="text-sm">Usa los botones de la derecha para acciones rapidas</p>
                                 </div>
                             )}
                         </div>
-                     )}
                 </div>
 
 
