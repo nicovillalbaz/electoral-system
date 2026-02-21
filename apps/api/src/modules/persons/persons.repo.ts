@@ -19,6 +19,8 @@ export async function personsList(
     votedStatus?: string;
     campaignStatus?: string; 
     tagId?: string;
+    needsTransport?: string;
+    transportStatus?: string;
     hasRequests?: string;
     hasFinancialNeeds?: string;
     financialNeedsFulfilled?: string;
@@ -118,6 +120,20 @@ export async function personsList(
     );
     queryParams.push(params.tagId);
     paramIndex++;
+  }
+
+  // 8. Filtro Pedidos (Tiene pedidos?)
+  if (params.needsTransport && params.needsTransport !== "ALL") {
+      const val = params.needsTransport === "true";
+      conditions.push(`p.needs_transport = $${paramIndex}`);
+      queryParams.push(val);
+      paramIndex++;
+  }
+
+  if (params.transportStatus && params.transportStatus !== "ALL") {
+      conditions.push(`p.transport_status = $${paramIndex}`);
+      queryParams.push(params.transportStatus);
+      paramIndex++;
   }
 
   // 8. Filtro Pedidos (Tiene pedidos?)
@@ -283,14 +299,15 @@ export async function personCreate(campaignId: string, data: any) {
     const citizenRes = await client.query(
       `INSERT INTO global_citizens (
           document_id, first_name, last_name, party_affiliation, 
-          phone_number, location_department, location_district, location_place, 
+          phone_number, address, location_department, location_district, location_place, 
           voting_table_number, voting_order_number, created_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
        ON CONFLICT (document_id) DO UPDATE SET 
          first_name = COALESCE(EXCLUDED.first_name, global_citizens.first_name),
          last_name = COALESCE(EXCLUDED.last_name, global_citizens.last_name),
          phone_number = COALESCE(EXCLUDED.phone_number, global_citizens.phone_number),
+         address = COALESCE(EXCLUDED.address, global_citizens.address),
          updated_at = NOW()
        RETURNING id`,
       [
@@ -299,6 +316,7 @@ export async function personCreate(campaignId: string, data: any) {
         data.lastName,
         data.partyAffiliation || "ANR", // Por defecto según tu esquema
         data.phoneNumber, // <--- NUEVO
+        data.address ?? null,
         data.department, // desc_dep
         data.district, // desc_dis
         data.pollingPlace, // desc_locanr
@@ -412,12 +430,12 @@ export async function personUpdate(
 
     // 2. Actualizar Global Citizens (Datos Personales Básicos y Barrio y AFILIACIÓN)
     if (
-      patch.firstName ||
-      patch.lastName ||
-      patch.phoneNumber ||
-      patch.address ||
-      patch.pollingPlace ||
-      patch.partyAffiliation // <--- Nuevo
+      patch.firstName !== undefined ||
+      patch.lastName !== undefined ||
+      patch.phoneNumber !== undefined ||
+      patch.address !== undefined ||
+      patch.pollingPlace !== undefined ||
+      patch.partyAffiliation !== undefined // <--- Nuevo
     ) {
       await client.query(
         `UPDATE global_citizens 

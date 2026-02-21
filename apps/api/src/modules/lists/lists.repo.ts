@@ -190,7 +190,14 @@ function buildSmartQuery(filters: any, baseParamIndex: number) {
   };
 }
 
-export async function listGetMembers(campaignId: string, listId: string, limit: number = 50, offset: number = 0, filterOverride?: any) {
+export async function listGetMembers(
+  campaignId: string,
+  listId: string,
+  limit: number = 50,
+  offset: number = 0,
+  filterOverride?: any,
+  search?: string
+) {
   // 1. Primero obtenemos la definición de la lista para ver sus filtros
   const listDef = await query(
   `SELECT name, filters FROM lists WHERE id = $1 AND campaign_id = $2`,
@@ -207,6 +214,22 @@ export async function listGetMembers(campaignId: string, listId: string, limit: 
   // 3. Construimos la query dinámica usando el Motor
   // Empezamos en $2 porque $1 será campaignId
   const { whereClause, values } = buildSmartQuery(filters, 2);
+  const normalizedSearch = search?.trim();
+  let searchClause = "";
+
+  if (normalizedSearch) {
+    const searchParamIndex = values.length + 2;
+    values.push(`%${normalizedSearch}%`);
+    searchClause = `
+      AND (
+        g.document_id ILIKE $${searchParamIndex}
+        OR g.first_name ILIKE $${searchParamIndex}
+        OR g.last_name ILIKE $${searchParamIndex}
+        OR CONCAT(g.first_name, ' ', g.last_name) ILIKE $${searchParamIndex}
+        OR CONCAT(g.last_name, ' ', g.first_name) ILIKE $${searchParamIndex}
+      )
+    `;
+  }
 
   // 4. Ejecutamos la consulta final
   // NOTA: Traemos las mismas columnas que en el Padrón General para reutilizar la tabla del frontend
@@ -242,6 +265,7 @@ export async function listGetMembers(campaignId: string, listId: string, limit: 
     JOIN global_citizens g ON p.citizen_id = g.id
     WHERE p.campaign_id = $1 AND p.deleted_at IS NULL
     ${whereClause}
+    ${searchClause}
     ORDER BY p.updated_at DESC
     LIMIT $${values.length + 2} OFFSET $${values.length + 3}
   `;

@@ -432,6 +432,38 @@ export default function PersonModal({
                             </select>
                          </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-4">
+                         <div>
+                            <label className="block text-xs font-bold text-zinc-500 mb-1">NECESITA TRANSPORTE</label>
+                            <select
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500"
+                                value={formData.needsTransport ? "true" : "false"}
+                                onChange={(e) => {
+                                    const needsTransport = e.target.value === "true";
+                                    setFormData({
+                                        ...formData,
+                                        needsTransport,
+                                        transportStatus: needsTransport ? formData.transportStatus : "PENDING",
+                                    });
+                                }}
+                            >
+                                <option value="false">NO</option>
+                                <option value="true">SI</option>
+                            </select>
+                         </div>
+                         <div>
+                            <label className="block text-xs font-bold text-zinc-500 mb-1">ESTADO TRANSPORTE</label>
+                            <select
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500"
+                                value={formData.transportStatus}
+                                onChange={(e) => setFormData({ ...formData, transportStatus: e.target.value })}
+                            >
+                                <option value="PENDING">PENDIENTE</option>
+                                <option value="ASSIGNED">ASIGNADO</option>
+                                <option value="COMPLETED">COMPLETADO</option>
+                            </select>
+                         </div>
+                    </div>
                     <div>
                          <label className="block text-xs font-bold text-zinc-500 mb-1">NOTAS</label>
                          <textarea className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white h-20 outline-none resize-none" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} placeholder="..." />

@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Loader2, ArrowLeft, Users, MonitorPlay } from "lucide-react";
-import TeamTab from "../components/TeamTab";
-import MonitorTab from "../components/MonitorTab";
+import { Loader2, ArrowLeft } from "lucide-react";
 import LogsTab from "../components/LogsTab";
 
 export default function StationDashboardPage() {
@@ -12,7 +10,6 @@ export default function StationDashboardPage() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"TEAM" | "MONITOR" | "LOGS">("TEAM");
 
   useEffect(() => {
     if (id) fetchData();
@@ -56,7 +53,7 @@ export default function StationDashboardPage() {
                     <ArrowLeft className="w-5 h-5 text-zinc-400" />
                 </button>
                 <div>
-                    <h1 className="text-2xl font-black text-white tracking-tight">PC CONTROL</h1>
+                    <h1 className="text-2xl font-black text-white tracking-tight">AUDITORIA LOGS</h1>
                     <div className="flex gap-4 text-sm text-zinc-500">
                         <span>Meta: {data.stats.total_assigned}</span>
                         <span className="text-green-500">Votos: {data.stats.total_voted}</span>
@@ -64,65 +61,11 @@ export default function StationDashboardPage() {
                     </div>
                 </div>
             </div>
-
-            {/* Tabs */}
-            <div className="flex bg-zinc-900 rounded-lg p-1 border border-zinc-800">
-                <button
-                    onClick={() => setActiveTab("TEAM")}
-                    className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${
-                        activeTab === "TEAM" 
-                        ? "bg-zinc-800 text-white shadow-lg" 
-                        : "text-zinc-500 hover:text-zinc-300"
-                    }`}
-                >
-                    <Users className="w-4 h-4" />
-                    EQUIPO
-                </button>
-                <button
-                    onClick={() => setActiveTab("MONITOR")}
-                    className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${
-                        activeTab === "MONITOR" 
-                        ? "bg-blue-900/30 text-blue-400 border border-blue-500/20 shadow-lg" 
-                        : "text-zinc-500 hover:text-zinc-300"
-                    }`}
-                >
-                    <MonitorPlay className="w-4 h-4" />
-                    MONITOR
-                </button>
-                <button
-                    onClick={() => setActiveTab("LOGS")}
-                    className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${
-                        activeTab === "LOGS" 
-                        ? "bg-purple-900/30 text-purple-400 border border-purple-500/20 shadow-lg" 
-                        : "text-zinc-500 hover:text-zinc-300"
-                    }`}
-                >
-                    LOGS
-                </button>
-            </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto p-6">
-        {activeTab === "TEAM" && (
-            <TeamTab 
-                stationId={id as string} 
-                collaborators={data.collaborators} 
-                users={data.users}
-                onRefresh={fetchData} 
-            />
-        )}
-        
-        {activeTab === "MONITOR" && (
-            <MonitorTab 
-                voters={data.voters.data}
-                total={data.voters.total} 
-            />
-        )}
-
-        {activeTab === "LOGS" && (
-            <LogsTab stationId={id as string} />
-        )}
+        <LogsTab stationId={id as string} />
       </div>
     </div>
   );

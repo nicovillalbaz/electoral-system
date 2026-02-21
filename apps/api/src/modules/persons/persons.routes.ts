@@ -79,6 +79,8 @@ export async function personsRoutes(app: FastifyInstance) {
         votedStatus: z.string().optional(),
         campaignStatus: z.string().optional(), 
         tagId: z.string().optional(),
+        needsTransport: z.string().optional(),
+        transportStatus: z.string().optional(),
         
         // Filtros Nuevos (Finanzas y Pedidos)
         hasRequests: z.string().optional(), 
@@ -101,6 +103,8 @@ export async function personsRoutes(app: FastifyInstance) {
       votedStatus: queryZ.votedStatus,
       campaignStatus: queryZ.campaignStatus, 
       tagId: queryZ.tagId,
+      needsTransport: queryZ.needsTransport,
+      transportStatus: queryZ.transportStatus,
       hasRequests: queryZ.hasRequests,
       hasFinancialNeeds: queryZ.hasFinancialNeeds,
       financialNeedsFulfilled: queryZ.financialNeedsFulfilled,

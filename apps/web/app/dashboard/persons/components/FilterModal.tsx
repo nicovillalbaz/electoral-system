@@ -20,6 +20,8 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
     tagId: initialValues?.tagId || "",            
     votedStatus: initialValues?.votedStatus || "ALL",
     campaignStatus: initialValues?.campaignStatus || initialValues?.campaign_status || "ALL",
+    needsTransport: initialValues?.needsTransport || "ALL",
+    transportStatus: initialValues?.transportStatus || "ALL",
     hasRequests: initialValues?.hasRequests || false,
     hasFinancialNeeds: initialValues?.hasFinancialNeeds || "ALL",
     financialNeedsFulfilled: initialValues?.financialNeedsFulfilled || "ALL"
@@ -38,6 +40,8 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
       tagId: "",
       votedStatus: "ALL",
       campaignStatus: "ALL",
+      needsTransport: "ALL",
+      transportStatus: "ALL",
       hasRequests: false,
       hasFinancialNeeds: "ALL",
       financialNeedsFulfilled: "ALL"
@@ -169,6 +173,41 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
                                 <option value="VISITED">✅ Visitado</option>
                                 <option value="VISITED_PC">🟢 Pasó por PC</option>
                                 <option value="DO_NOT_DISTURB">⛔ No Molestar</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-[10px] font-bold text-zinc-500 mb-1">NECESITA TRANSPORTE</label>
+                            <select
+                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-sm text-white focus:border-emerald-500 outline-none"
+                                value={filters.needsTransport}
+                                onChange={(e) =>
+                                    setFilters({
+                                        ...filters,
+                                        needsTransport: e.target.value,
+                                        transportStatus: e.target.value === "true" ? filters.transportStatus : "ALL",
+                                    })
+                                }
+                            >
+                                <option value="ALL">Todos</option>
+                                <option value="true">Sí</option>
+                                <option value="false">No</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-zinc-500 mb-1">ESTADO TRANSPORTE</label>
+                            <select
+                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-sm text-white focus:border-emerald-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                value={filters.transportStatus}
+                                onChange={(e) => setFilters({ ...filters, transportStatus: e.target.value })}
+                                disabled={filters.needsTransport !== "true"}
+                            >
+                                <option value="ALL">Todos</option>
+                                <option value="PENDING">Pendiente</option>
+                                <option value="ASSIGNED">Asignado</option>
+                                <option value="COMPLETED">Completado</option>
                             </select>
                         </div>
                     </div>

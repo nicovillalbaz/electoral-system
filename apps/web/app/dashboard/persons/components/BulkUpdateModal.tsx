@@ -209,10 +209,8 @@ export default function BulkUpdateModal({ isOpen, onClose, onSuccess, activeFilt
                             >
                                 <option value="">Seleccionar...</option>
                                 <option value="PENDING">PENDIENTE</option>
-                                <option value="SEARCHING">BUSCANDO</option>
-                                <option value="ON_TRANSIT">EN TRÁNSITO</option>
-                                <option value="ARRIVED">LLEGÓ</option>
-                                <option value="RETURNING">RETORNANDO</option>
+                                <option value="ASSIGNED">ASIGNADO</option>
+                                <option value="COMPLETED">COMPLETADO</option>
                             </select>
                         </div>
                     </div>

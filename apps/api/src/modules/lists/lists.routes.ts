@@ -52,9 +52,10 @@ export async function listsRoutes(app: FastifyInstance) {
     const querySchema = z.object({
         page: z.coerce.number().default(1),
         limit: z.coerce.number().default(50),
+        q: z.string().optional(),
         filters: z.string().optional() // Recibimos JSON string
     });
-    const { page, limit, filters } = querySchema.parse(req.query);
+    const { page, limit, q, filters } = querySchema.parse(req.query);
     const offset = (page - 1) * limit;
 
     let filterOverride = undefined;
@@ -66,7 +67,7 @@ export async function listsRoutes(app: FastifyInstance) {
         }
     }
 
-    const result = await listGetMembers(req.user.campaignId, id, limit, offset, filterOverride);
+    const result = await listGetMembers(req.user.campaignId, id, limit, offset, filterOverride, q);
     
     if (!result) throw notFound("Lista no encontrada");
     

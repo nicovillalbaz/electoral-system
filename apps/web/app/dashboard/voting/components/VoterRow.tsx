@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from "react";
-import { Check, User, MapPin, Truck, AlertTriangle, DollarSign, CheckCircle, Vote, X } from "lucide-react";
+import { Check, User, MapPin, Truck, AlertTriangle, DollarSign, CheckCircle, Vote, X, Car } from "lucide-react";
 import safeApi from "../../../../lib/api";
 
 type Voter = {
@@ -15,6 +15,8 @@ type Voter = {
     station_checkin_at?: string;
     assigned_station_id?: string;
     current_vote_intent?: string;
+    needs_transport?: boolean;
+    transport_status?: "PENDING" | "ASSIGNED" | "COMPLETED";
     has_financial_needs?: boolean;
     financial_needs_fulfilled?: boolean;
     financial_amount?: number;
@@ -55,6 +57,8 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
     const [tempFinanceAmount, setTempFinanceAmount] = useState(0);
     const [tempNotes, setTempNotes] = useState("");
     const [tempRequests, setTempRequests] = useState<any[]>([]);
+    const [tempNeedsTransport, setTempNeedsTransport] = useState(false);
+    const [tempTransportStatus, setTempTransportStatus] = useState<"PENDING" | "ASSIGNED" | "COMPLETED">("PENDING");
     const [newRequestDetail, setNewRequestDetail] = useState("");
     const [newRequestType, setNewRequestType] = useState("LOGISTICS");
     const [newRequestAssignee, setNewRequestAssignee] = useState("");
@@ -87,6 +91,10 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
         }
         if (openPopover === 'NOTES') {
             setTempNotes(voter.notes || "");
+        }
+        if (openPopover === 'TRANSPORT') {
+            setTempNeedsTransport(!!voter.needs_transport);
+            setTempTransportStatus((voter.transport_status || "PENDING") as "PENDING" | "ASSIGNED" | "COMPLETED");
         }
         if (openPopover === 'LOGISTICS') {
             setTempRequests(Array.isArray(voter.requests) ? voter.requests : []);
@@ -202,6 +210,41 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
         }
     };
 
+    const handleTransportSave = async () => {
+        if (loading) return;
+
+        const patch: any = {};
+        if (!voter.needs_transport) {
+            if (!tempNeedsTransport) {
+                setOpenPopover(null);
+                return;
+            }
+            patch.needsTransport = true;
+            patch.transportStatus = tempTransportStatus;
+        } else if (voter.transport_status !== tempTransportStatus) {
+            patch.transportStatus = tempTransportStatus;
+        } else {
+            setOpenPopover(null);
+            return;
+        }
+
+        setLoading(true);
+        try {
+            await safeApi.patch(`/persons/${voter.id}`, patch);
+            onUpdate({
+                ...voter,
+                needs_transport: patch.needsTransport ?? voter.needs_transport,
+                transport_status: patch.transportStatus ?? voter.transport_status,
+            });
+            setOpenPopover(null);
+        } catch (e) {
+            console.error(e);
+            alert("Error al guardar transporte.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const addRequest = () => {
         const val = newRequestDetail.trim();
         if (!val) return;
@@ -257,6 +300,7 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
     const financeLocked = !!voter.financial_needs_fulfilled;
     const financeRequested = !!voter.has_financial_needs;
     const hasLogistics = (Array.isArray(voter.requests) && voter.requests.length > 0) || !!voter.logistics_flag;
+    const hasTransport = !!voter.needs_transport;
 
     return (
         <div ref={rowRef} className={`relative flex items-center p-3 border-b border-white/5 hover:bg-white/5 transition-colors group ${voter.status_day_d === 'VOTED' ? 'bg-emerald-900/10' : ''}`}>
@@ -358,7 +402,70 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
                     )}
                 </div>
 
-                {/* C. VOTE INTENT */}
+                {/* C. TRANSPORT */}
+                <div className="relative">
+                    <button
+                        onClick={(e) => togglePopover('TRANSPORT', e)}
+                        className={`p-2 rounded-lg transition-colors ${
+                            hasTransport
+                                ? (voter.transport_status === "COMPLETED" ? "text-emerald-400 bg-emerald-500/10" : "text-cyan-400 bg-cyan-500/10")
+                                : "text-zinc-600 hover:bg-white/10"
+                        }`}
+                        title="Transporte"
+                    >
+                        <Car size={16} />
+                    </button>
+                    {openPopover === 'TRANSPORT' && (
+                        <div className="absolute right-0 top-full mt-2 w-56 bg-zinc-900 border border-zinc-700 shadow-2xl rounded-xl z-50 p-3 flex flex-col gap-3 animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                            <div className="text-xs font-bold text-zinc-400">TRANSPORTE</div>
+
+                            {!voter.needs_transport && !tempNeedsTransport ? (
+                                <>
+                                    <div className="text-xs text-zinc-500">Necesita transporte?</div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            onClick={() => setOpenPopover(null)}
+                                            className="bg-zinc-800 text-zinc-300 font-bold text-xs py-2 rounded hover:bg-zinc-700"
+                                        >
+                                            NO
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setTempNeedsTransport(true);
+                                                setTempTransportStatus((voter.transport_status || "PENDING") as "PENDING" | "ASSIGNED" | "COMPLETED");
+                                            }}
+                                            className="bg-white text-black font-bold text-xs py-2 rounded hover:bg-zinc-200"
+                                        >
+                                            SI
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <label className="text-xs font-bold text-zinc-500">ESTADO</label>
+                                    <select
+                                        className="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
+                                        value={tempTransportStatus}
+                                        onChange={(e) => setTempTransportStatus(e.target.value as "PENDING" | "ASSIGNED" | "COMPLETED")}
+                                    >
+                                        <option value="PENDING">PENDIENTE</option>
+                                        <option value="ASSIGNED">ASIGNADO</option>
+                                        <option value="COMPLETED">COMPLETADO</option>
+                                    </select>
+                                    <button
+                                        onClick={handleTransportSave}
+                                        disabled={loading}
+                                        className="w-full bg-white text-black font-bold text-xs py-2 rounded hover:bg-zinc-200 flex justify-center items-center gap-2 disabled:opacity-60"
+                                    >
+                                        {loading ? '...' : 'GUARDAR'} <Check size={14} />
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* D. VOTE INTENT */}
                 <div className="relative">
                     <button 
                          onClick={(e) => togglePopover('INTENT', e)}
@@ -391,7 +498,7 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
                     )}
                 </div>
 
-                {/* D. FINANCE */}
+                {/* E. FINANCE */}
                 <div className="relative">
                     <button 
                         onClick={(e) => togglePopover('FINANCE', e)}
@@ -445,7 +552,7 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
                     )}
                 </div>
 
-                {/* E. LOGISTICS */}
+                {/* F. LOGISTICS */}
                 <div className="relative">
                     <button 
                         onClick={(e) => togglePopover('LOGISTICS', e)}
@@ -530,7 +637,7 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
                     )}
                 </div>
 
-                {/* F. NOTES */}
+                {/* G. NOTES */}
                  <div className="relative">
                     <button 
                         onClick={(e) => togglePopover('NOTES', e)}

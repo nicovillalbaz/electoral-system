@@ -27,6 +27,6 @@ export const CAMPAIGN_STATUS_OPTIONS = [
 
 export const TRANSPORT_STATUS_OPTIONS = [
   "PENDING", 
-  "ASSIGNED", 
+  "ASSIGNED",
   "COMPLETED"
 ] as const;
