@@ -48,6 +48,9 @@ export default function ActivitiesPage() {
   const [view, setView] = useState<"list" | "calendar">("list");
   const [loading, setLoading] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalTasks, setTotalTasks] = useState(0);
+  const limit = 50;
   
   // Filters
   const [search, setSearch] = useState("");
@@ -69,7 +72,11 @@ export default function ActivitiesPage() {
 
   useEffect(() => {
     fetchTasks();
-  }, [debouncedSearch, statusFilter, typeFilter, view, currentDate, onlyMine, currentUser]);
+  }, [debouncedSearch, statusFilter, typeFilter, view, currentDate, onlyMine, currentUser, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter, typeFilter, view, currentDate, onlyMine, currentUser?.id]);
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -87,10 +94,16 @@ export default function ActivitiesPage() {
          params.startDate = startOfMonth(currentDate).toISOString();
          params.endDate = endOfMonth(currentDate).toISOString();
          // In calendar we want ALL status usually, but let's respect the filter if explicit
+         params.page = 1;
+         params.limit = 500;
+      } else {
+         params.page = page;
+         params.limit = limit;
       }
 
       const res = await api.get("/tasks", { params });
       setTasks(res.data.data || []);
+      setTotalTasks(typeof res.data.total === "number" ? res.data.total : (res.data.data || []).length);
     } catch (e) {
       // silently ignore load errors
     } finally {
@@ -203,6 +216,7 @@ export default function ActivitiesPage() {
 
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const totalPages = Math.max(1, Math.ceil(totalTasks / limit));
 
   const openCreate = () => {
       setTaskToEdit(null);
@@ -375,6 +389,31 @@ export default function ActivitiesPage() {
                         );
                     })}
                 </div>
+            )}
+
+            {view === "list" && (
+              <div className="pt-4 flex items-center justify-between text-xs text-zinc-500">
+                <span>
+                  Pagina <span className="text-white font-bold">{page}</span> de{" "}
+                  <span className="text-white font-bold">{totalPages}</span>
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1 || loading}
+                    className="px-3 py-1.5 rounded border border-zinc-700 text-zinc-300 disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages || loading}
+                    className="px-3 py-1.5 rounded border border-zinc-700 text-zinc-300 disabled:opacity-40"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
             )}
          </div>
       ) : (

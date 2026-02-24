@@ -25,7 +25,9 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "seed:altos": "tsx src/scripts/seed-altos.ts",
+    "verify:hierarchy": "tsx src/scripts/verify-hierarchy.ts"
   },
   "keywords": [],
   "author": "",

@@ -1,9 +1,31 @@
 import { query } from "../../db/query";
 import { forbidden } from "../../common/http/errors";
 
+const STATION_RETURNING_COLUMNS = `
+  id,
+  campaign_id,
+  name,
+  status,
+  created_at,
+  address,
+  notes,
+  latitude,
+  longitude,
+  metadata,
+  deleted_at,
+  manager_user_id
+`;
+
+const campaignHierarchyScope = (alias: string, campaignParamIndex: number) =>
+  `(${alias}.campaign_id = $${campaignParamIndex} OR ${alias}.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $${campaignParamIndex}))`;
+
 async function assertStationInCampaign(campaignId: string, stationId: string) {
   const res = await query(
-    `SELECT 1 FROM stations WHERE id=$1 AND campaign_id=$2 AND deleted_at IS NULL`,
+    `SELECT 1
+     FROM stations s
+     WHERE s.id = $1
+       AND ${campaignHierarchyScope("s", 2)}
+       AND s.deleted_at IS NULL`,
     [stationId, campaignId]
   );
   if ((res.rowCount ?? 0) === 0) {
@@ -65,15 +87,12 @@ async function resolveFinancialTaskSource(): Promise<FinancialTaskSource | null>
 }
 export async function stationCreate(campaignId: string, data: any) {
   const res = await query(
-    `INSERT INTO stations (campaign_id, name, status, city_id, zone_id, neighborhood_id, address, manager_user_id)
-     VALUES ($1,$2,'ACTIVE',$3,$4,$5,$6,$7)
-     RETURNING *`,
+    `INSERT INTO stations (campaign_id, name, status, address, manager_user_id)
+     VALUES ($1,$2,'ACTIVE',$3,$4)
+     RETURNING ${STATION_RETURNING_COLUMNS}`,
     [
       campaignId,
       data.name,
-      data.cityId ?? null,
-      data.zoneId ?? null,
-      data.neighborhoodId ?? null,
       data.address ?? null,
       data.managerUserId ?? null,
     ]
@@ -85,7 +104,18 @@ export async function stationList(campaignId: string) {
   // Enhanced query with KPIs
   const res = await query(
     `SELECT 
-        s.*,
+        s.id,
+        s.campaign_id,
+        s.name,
+        s.status,
+        s.created_at,
+        s.address,
+        s.notes,
+        s.latitude,
+        s.longitude,
+        s.metadata,
+        s.deleted_at,
+        s.manager_user_id,
         u.full_name as manager_name,
         COUNT(p.id) FILTER (WHERE p.assigned_station_id = s.id) as assigned_count,
         COUNT(p.id) FILTER (WHERE p.assigned_station_id = s.id AND (p.status_day_d = 'VOTED' OR p.has_voted = true)) as voted_count
@@ -93,8 +123,8 @@ export async function stationList(campaignId: string) {
      LEFT JOIN users u ON u.id = s.manager_user_id
      LEFT JOIN persons p 
        ON p.assigned_station_id = s.id 
-      AND p.campaign_id = $1
-     WHERE s.campaign_id=$1 AND s.deleted_at IS NULL
+      AND ${campaignHierarchyScope("p", 1)}
+     WHERE ${campaignHierarchyScope("s", 1)} AND s.deleted_at IS NULL
      GROUP BY s.id, u.full_name
      ORDER BY s.name`,
     [campaignId]
@@ -110,24 +140,20 @@ export async function stationList(campaignId: string) {
 
 export async function stationUpdate(campaignId: string, id: string, data: any) {
     const res = await query(
-        `UPDATE stations 
+        `UPDATE stations s
          SET name = COALESCE($3, name),
-             city_id = COALESCE($4, city_id),
-             zone_id = COALESCE($5, zone_id),
-             neighborhood_id = COALESCE($6, neighborhood_id),
-             address = COALESCE($7, address),
-             manager_user_id = COALESCE($8, manager_user_id),
-             notes = COALESCE($9, notes),
-             metadata = COALESCE($10, metadata)
-         WHERE id=$1 AND campaign_id=$2 AND deleted_at IS NULL
-         RETURNING *`,
+             address = COALESCE($4, address),
+             manager_user_id = COALESCE($5, manager_user_id),
+             notes = COALESCE($6, notes),
+             metadata = COALESCE($7, metadata)
+         WHERE s.id = $1
+           AND ${campaignHierarchyScope("s", 2)}
+           AND s.deleted_at IS NULL
+         RETURNING ${STATION_RETURNING_COLUMNS}`,
         [
             id, 
             campaignId, 
             data.name, 
-            data.cityId, 
-            data.zoneId, 
-            data.neighborhoodId, 
             data.address, 
             data.managerUserId,
             data.notes,
@@ -139,7 +165,14 @@ export async function stationUpdate(campaignId: string, id: string, data: any) {
 
 export async function stationDelete(campaignId: string, id: string) {
     // Soft Delete
-    await query(`UPDATE stations SET deleted_at = NOW(), status='INACTIVE' WHERE id=$1 AND campaign_id=$2 AND deleted_at IS NULL`, [id, campaignId]);
+    await query(
+      `UPDATE stations s
+       SET deleted_at = NOW(), status='INACTIVE'
+       WHERE s.id = $1
+         AND ${campaignHierarchyScope("s", 2)}
+         AND s.deleted_at IS NULL`,
+      [id, campaignId],
+    );
 
     return { success: true };
 }
@@ -154,23 +187,23 @@ export async function getStationStats(campaignId: string, stationId: string) {
           SELECT COALESCE(SUM(p.financial_amount), 0)
           FROM station_tasks st
           JOIN persons p ON p.id = st.${source.personColumn}
-          WHERE st.campaign_id = $1
+          WHERE ${campaignHierarchyScope("st", 1)}
             AND st.${source.typeColumn} = 'FINANCIAL'
             AND st.created_at >= CURRENT_DATE
             AND st.created_at < CURRENT_DATE + INTERVAL '1 day'
             ${source.hasStationId ? 'AND st.station_id = $2' : ''}
             ${source.hasStationId ? '' : 'AND p.assigned_station_id = $2'}
-            AND p.campaign_id = $1
+            AND ${campaignHierarchyScope("p", 1)}
         ) as financial_total_today`
       : `(
           SELECT COALESCE(SUM(p.financial_amount), 0)
           FROM tasks t
           JOIN persons p ON p.id = t.${source.personColumn}
-          WHERE t.campaign_id = $1
+          WHERE ${campaignHierarchyScope("t", 1)}
             AND t.${source.typeColumn} = 'FINANCIAL'
             AND t.created_at >= CURRENT_DATE
             AND t.created_at < CURRENT_DATE + INTERVAL '1 day'
-            AND p.campaign_id = $1
+            AND ${campaignHierarchyScope("p", 1)}
             AND p.assigned_station_id = $2
         ) as financial_total_today`
     : `0 as financial_total_today`;
@@ -178,16 +211,16 @@ export async function getStationStats(campaignId: string, stationId: string) {
   const res = await query(
     `SELECT
         (SELECT COUNT(*)::int
-           FROM users
-          WHERE campaign_id = $1
-            AND assigned_station_id = $2
-            AND is_active = true) as staff_count,
+           FROM users u
+          WHERE ${campaignHierarchyScope("u", 1)}
+            AND u.assigned_station_id = $2
+            AND u.is_active = true) as staff_count,
         (SELECT COUNT(*)::int
-           FROM station_checkins
-          WHERE campaign_id = $1
-            AND station_id = $2
-            AND checkin_at >= CURRENT_DATE
-            AND checkin_at < CURRENT_DATE + INTERVAL '1 day') as checkins_today,
+           FROM station_checkins sc
+          WHERE ${campaignHierarchyScope("sc", 1)}
+            AND sc.station_id = $2
+            AND sc.checkin_at >= CURRENT_DATE
+            AND sc.checkin_at < CURRENT_DATE + INTERVAL '1 day') as checkins_today,
         ${financialSubquery}`,
     [campaignId, stationId]
   );
@@ -203,6 +236,7 @@ export async function getStationStats(campaignId: string, stationId: string) {
 
 
 export async function getStationCheckins(campaignId: string, stationId: string) {
+    await assertStationInCampaign(campaignId, stationId);
     const res = await query(
         `SELECT 
             sc.id as checkin_id,
@@ -215,7 +249,7 @@ export async function getStationCheckins(campaignId: string, stationId: string) 
          FROM station_checkins sc
          JOIN persons p ON sc.person_id = p.id
          JOIN global_citizens g ON p.citizen_id = g.id
-         WHERE sc.campaign_id=$1 
+         WHERE ${campaignHierarchyScope("sc", 1)}
            AND sc.station_id=$2 
            AND sc.checkin_at >= CURRENT_DATE 
            AND sc.checkin_at < CURRENT_DATE + INTERVAL '1 day'
@@ -227,12 +261,17 @@ export async function getStationCheckins(campaignId: string, stationId: string) 
 export async function checkInToStation(campaignId: string, stationId: string, personId: string, userId: string) {
     await assertStationInCampaign(campaignId, stationId);
     const personRes = await query(
-        `SELECT 1 FROM persons WHERE id=$1 AND campaign_id=$2`,
+        `SELECT p.citizen_id
+         FROM persons p
+         WHERE p.id = $1
+           AND ${campaignHierarchyScope("p", 2)}
+           AND p.deleted_at IS NULL`,
         [personId, campaignId]
     );
     if ((personRes.rowCount ?? 0) === 0) {
         throw forbidden("Person not found or access denied");
     }
+    const citizenId = personRes.rows[0].citizen_id as string;
     
     const res = await query(
         `INSERT INTO station_checkins (campaign_id, station_id, person_id, checkin_by_user_id, checkin_at)
@@ -242,12 +281,18 @@ export async function checkInToStation(campaignId: string, stationId: string, pe
         [campaignId, stationId, personId, userId]
     );
 
-    // Sync Day-D status to keep it consistent with station_checkins
+    // Sync Day-D status globally for this citizen across sibling campaigns.
     await query(
         `UPDATE persons 
-         SET status_day_d = 'CHECKED_IN', updated_at = NOW()
-         WHERE id=$1 AND campaign_id=$2`,
-        [personId, campaignId]
+         SET status_day_d = CASE
+               WHEN has_voted THEN 'VOTED'::day_d_status_enum
+               ELSE 'CHECKED_IN'::day_d_status_enum
+             END,
+             station_checkin_at = NOW(),
+             updated_at = NOW()
+         WHERE citizen_id = $1
+           AND deleted_at IS NULL`,
+        [citizenId]
     );
     return { success: (res.rowCount ?? 0) > 0 };
 }
@@ -268,13 +313,13 @@ export async function getStationsStatsBatch(campaignId: string, stationIds: stri
             COALESCE(SUM(p.financial_amount), 0) as financial_total_today
           FROM station_tasks st
           JOIN persons p ON p.id = st.${source.personColumn}
-          WHERE st.campaign_id = $1
+          WHERE ${campaignHierarchyScope("st", 1)}
             AND st.${source.typeColumn} = 'FINANCIAL'
             AND st.created_at >= CURRENT_DATE
             AND st.created_at < CURRENT_DATE + INTERVAL '1 day'
             ${source.hasStationId ? 'AND st.station_id = ANY($2::uuid[])' : ''}
             ${source.hasStationId ? '' : 'AND p.assigned_station_id = ANY($2::uuid[])'}
-            AND p.campaign_id = $1
+            AND ${campaignHierarchyScope("p", 1)}
           GROUP BY ${source.hasStationId ? 'st.station_id' : 'p.assigned_station_id'}
         )`
       : `financial AS (
@@ -283,11 +328,11 @@ export async function getStationsStatsBatch(campaignId: string, stationIds: stri
             COALESCE(SUM(p.financial_amount), 0) as financial_total_today
           FROM tasks t
           JOIN persons p ON p.id = t.${source.personColumn}
-          WHERE t.campaign_id = $1
+          WHERE ${campaignHierarchyScope("t", 1)}
             AND t.${source.typeColumn} = 'FINANCIAL'
             AND t.created_at >= CURRENT_DATE
             AND t.created_at < CURRENT_DATE + INTERVAL '1 day'
-            AND p.campaign_id = $1
+            AND ${campaignHierarchyScope("p", 1)}
             AND p.assigned_station_id = ANY($2::uuid[])
           GROUP BY p.assigned_station_id
         )`
@@ -299,19 +344,19 @@ export async function getStationsStatsBatch(campaignId: string, stationIds: stri
   const sql = `
     WITH staff AS (
       SELECT assigned_station_id as station_id, COUNT(*)::int as staff_count
-      FROM users
-      WHERE campaign_id = $1
-        AND is_active = true
-        AND assigned_station_id = ANY($2::uuid[])
+      FROM users u
+      WHERE ${campaignHierarchyScope("u", 1)}
+        AND u.is_active = true
+        AND u.assigned_station_id = ANY($2::uuid[])
       GROUP BY assigned_station_id
     ),
     checkins AS (
       SELECT station_id, COUNT(*)::int as checkins_today
-      FROM station_checkins
-      WHERE campaign_id = $1
-        AND station_id = ANY($2::uuid[])
-        AND checkin_at >= CURRENT_DATE
-        AND checkin_at < CURRENT_DATE + INTERVAL '1 day'
+      FROM station_checkins sc
+      WHERE ${campaignHierarchyScope("sc", 1)}
+        AND sc.station_id = ANY($2::uuid[])
+        AND sc.checkin_at >= CURRENT_DATE
+        AND sc.checkin_at < CURRENT_DATE + INTERVAL '1 day'
       GROUP BY station_id
     ),
     ${financialCte}
@@ -324,7 +369,7 @@ export async function getStationsStatsBatch(campaignId: string, stationIds: stri
     LEFT JOIN staff ON staff.station_id = s.id
     LEFT JOIN checkins ON checkins.station_id = s.id
     LEFT JOIN financial ON financial.station_id = s.id
-    WHERE s.campaign_id = $1
+    WHERE ${campaignHierarchyScope("s", 1)}
       AND s.id = ANY($2::uuid[])
   `;
 
@@ -358,7 +403,11 @@ export async function addCollaborator(campaignId: string, stationId: string, per
 
     if (targetPersonId) {
         const pRes = await query(
-            `SELECT 1 FROM persons WHERE id=$1 AND campaign_id=$2`,
+            `SELECT 1
+             FROM persons p
+             WHERE p.id = $1
+               AND ${campaignHierarchyScope("p", 2)}
+               AND p.deleted_at IS NULL`,
             [targetPersonId, campaignId]
         );
         if ((pRes.rowCount ?? 0) === 0) {
@@ -376,7 +425,9 @@ export async function addCollaborator(campaignId: string, stationId: string, per
             `SELECT p.id, g.first_name, g.last_name
              FROM persons p 
              JOIN global_citizens g ON p.citizen_id = g.id
-             WHERE p.campaign_id=$1 AND g.document_id=$2`,
+             WHERE ${campaignHierarchyScope("p", 1)}
+               AND p.deleted_at IS NULL
+               AND g.document_id=$2`,
             [campaignId, docId]
         );
 
@@ -449,14 +500,19 @@ export async function getStationDashboard(campaignId: string, stationId: string,
          JOIN stations s ON sc.station_id = s.id
          JOIN persons p ON sc.person_id = p.id
          JOIN global_citizens g ON p.citizen_id = g.id
-         WHERE sc.station_id=$1 AND s.campaign_id=$2 AND p.campaign_id=$2`,
+         WHERE sc.station_id=$1
+           AND ${campaignHierarchyScope("s", 2)}
+           AND ${campaignHierarchyScope("p", 2)}
+           AND p.deleted_at IS NULL`,
         [stationId, campaignId]
     );
 
     const assignedUsers = await query(
         `SELECT id, full_name, role, operational_role, assigned_station_id
-         FROM users
-         WHERE campaign_id=$1 AND assigned_station_id=$2 AND is_active=true
+         FROM users u
+         WHERE ${campaignHierarchyScope("u", 1)}
+           AND u.assigned_station_id=$2
+           AND u.is_active=true
          ORDER BY full_name`,
         [campaignId, stationId]
     );
@@ -464,19 +520,28 @@ export async function getStationDashboard(campaignId: string, stationId: string,
     // 2. Stats (Fixed: removed wasteful FROM persons)
     const statsQuery = await query(
         `SELECT 
-            (SELECT COUNT(*) FROM persons WHERE assigned_station_id=$1 AND campaign_id=$2) as total_assigned,
+            (SELECT COUNT(*)
+               FROM persons p
+              WHERE p.assigned_station_id = $1
+                AND ${campaignHierarchyScope("p", 2)}
+                AND p.deleted_at IS NULL) as total_assigned,
             (SELECT COUNT(DISTINCT person_id) 
-               FROM station_checkins 
-              WHERE station_id=$1 
-                AND campaign_id=$2 
-                AND checkin_at >= CURRENT_DATE 
-                AND checkin_at < CURRENT_DATE + INTERVAL '1 day') as total_visited_pc,
-            (SELECT COUNT(*) FROM persons WHERE assigned_station_id=$1 AND campaign_id=$2 AND (status_day_d='VOTED' OR has_voted=true)) as total_voted`,
+               FROM station_checkins sc
+              WHERE sc.station_id = $1
+                AND ${campaignHierarchyScope("sc", 2)}
+                AND sc.checkin_at >= CURRENT_DATE 
+                AND sc.checkin_at < CURRENT_DATE + INTERVAL '1 day') as total_visited_pc,
+            (SELECT COUNT(*)
+               FROM persons p
+              WHERE p.assigned_station_id = $1
+                AND ${campaignHierarchyScope("p", 2)}
+                AND p.deleted_at IS NULL
+                AND (p.status_day_d='VOTED' OR p.has_voted=true)) as total_voted`,
         [stationId, campaignId]
     );
 
     // 3. Voters (Paginated & Searched)
-    let whereClause = `p.campaign_id=$1 AND p.assigned_station_id=$2`;
+    let whereClause = `${campaignHierarchyScope("p", 1)} AND p.assigned_station_id=$2 AND p.deleted_at IS NULL`;
     const params: any[] = [campaignId, stationId];
 
     if (search) {
@@ -555,7 +620,7 @@ export async function getStationDashboard(campaignId: string, stationId: string,
         const checkinsRes = await query(
             `SELECT person_id FROM station_checkins 
              WHERE station_id=$1 
-               AND campaign_id=$3
+               AND ${campaignHierarchyScope("station_checkins", 3)}
                AND checkin_at >= CURRENT_DATE 
                AND checkin_at < CURRENT_DATE + INTERVAL '1 day' 
              AND person_id = ANY($2::uuid[])`,

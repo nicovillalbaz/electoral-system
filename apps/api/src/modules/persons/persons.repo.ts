@@ -4,6 +4,9 @@ import { logEvent } from "../events/events.repo";
 import { taskCreate } from "../tasks/tasks.repo";
 import { createNotification } from "../notifications/notifications.repo";
 
+const campaignHierarchyScope = (paramIndex: number, alias = "p") =>
+  `(${alias}.campaign_id = $${paramIndex} OR ${alias}.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $${paramIndex}))`;
+
 
 export async function personsList(
   campaignId: string,
@@ -36,7 +39,7 @@ export async function personsList(
   const offset = (page - 1) * limit;
   const like = `%${q}%`;
 
-  const conditions = [`p.campaign_id = $1`, `p.deleted_at IS NULL`];
+  const conditions = [campaignHierarchyScope(1, "p"), `p.deleted_at IS NULL`];
   const queryParams: any[] = [campaignId];
   let paramIndex = 2;
 
@@ -284,7 +287,7 @@ export async function personGet(campaignId: string, id: string) {
         p.requests, p.has_financial_needs, p.financial_needs_fulfilled, p.financial_amount
      FROM persons p 
      JOIN global_citizens g ON p.citizen_id = g.id 
-     WHERE p.campaign_id = $1 AND p.id = $2 AND p.deleted_at IS NULL`,
+     WHERE ${campaignHierarchyScope(1, "p")} AND p.id = $2 AND p.deleted_at IS NULL`,
     [campaignId, id],
   );
 }
@@ -414,7 +417,7 @@ export async function personUpdate(
                 g.phone_number, g.address, g.location_place, g.first_name, g.last_name
          FROM persons p
          JOIN global_citizens g ON p.citizen_id = g.id
-         WHERE p.id = $1 AND p.campaign_id = $2 AND p.deleted_at IS NULL`,
+         WHERE p.id = $1 AND ${campaignHierarchyScope(2, "p")} AND p.deleted_at IS NULL`,
       [personId, campaignId],
     );
 
@@ -444,8 +447,16 @@ export async function personUpdate(
              party_affiliation = COALESCE($3, party_affiliation),
              updated_at = NOW()
          FROM persons p
-         WHERE global_citizens.id = p.citizen_id AND p.id = $4`,
-        [patch.phoneNumber, patch.address, patch.partyAffiliation, personId],
+         WHERE global_citizens.id = p.citizen_id
+           AND p.id = $4
+           AND ${campaignHierarchyScope(5, "p")}`,
+        [
+          patch.phoneNumber,
+          patch.address,
+          patch.partyAffiliation,
+          personId,
+          campaignId,
+        ],
       );
     }
 
@@ -483,7 +494,7 @@ export async function personUpdate(
              assigned_user_id = COALESCE($12, assigned_user_id),
 
              updated_at = NOW()
-         WHERE id = $13 AND campaign_id = $14`,
+         WHERE id = $13 AND ${campaignHierarchyScope(14, "persons")}`,
         [
           sanitize(patch.currentVoteIntent), 
           patch.notes,
@@ -667,7 +678,7 @@ export async function personsGetUniqueAddresses(campaignId: string) {
       END as clean_zone
     FROM persons p
     JOIN global_citizens g ON p.citizen_id = g.id
-    WHERE p.campaign_id = $1 
+    WHERE ${campaignHierarchyScope(1, "p")}
       AND p.deleted_at IS NULL
       AND g.address IS NOT NULL 
       AND length(g.address) > 2
@@ -704,7 +715,7 @@ export async function personsBulkUpdate(
     await client.query("BEGIN");
     
     // 1. Build Conditions (Duplicated from personsList)
-    const conditions = [`p.campaign_id = $1`, `p.deleted_at IS NULL`];
+    const conditions = [campaignHierarchyScope(1, "p"), `p.deleted_at IS NULL`];
     const queryParams: any[] = [campaignId];
     let paramIndex = 2; // $1 is campaignId
 
@@ -792,13 +803,15 @@ export async function personsBulkUpdate(
     // Given usage frequency, this is acceptable. Or we can combine standard updates.
 
     // A. Standard Updates (One Query)
-    const standardFields = ["campaign_status", "current_vote_intent", "assigned_user_id", "assigned_station_id", "transport_status", "needs_transport", "has_voted"];
+    const standardFields = ["campaign_status", "current_vote_intent", "assigned_user_id", "assigned_station_id", "transport_status", "needs_transport"];
     const standardUpdates: any = {};
     updateKeys.forEach(k => {
         if (standardFields.includes(k)) standardUpdates[k] = updates[k];
     });
 
-    if (Object.keys(standardUpdates).length > 0) {
+    const standardUpdateCount = Object.keys(standardUpdates).length;
+
+    if (standardUpdateCount > 0) {
         const setClauses: string[] = [];
         Object.entries(standardUpdates).forEach(([k, v]) => {
             setClauses.push(`${k} = $${paramIndex}`);
@@ -814,7 +827,6 @@ export async function personsBulkUpdate(
            SET ${setClauses.join(", ")}, updated_at = NOW()
            FROM global_citizens g
            WHERE p.citizen_id = g.id
-             AND p.campaign_id = $1 
              AND ${conditions.join(" AND ")}
         `;
         await client.query(sql, queryParams);
@@ -828,8 +840,37 @@ export async function personsBulkUpdate(
     // Or just use the already built queryParams for the WHERE part!
     
     // Re-building base params for complex queries:
-    const baseParams = queryParams.slice(0, paramIndex - Object.keys(standardUpdates).length); // Remove the standard update values
+    const baseParams = queryParams.slice(0, paramIndex - standardUpdateCount); // Remove the standard update values
     const baseCondition = conditions.join(" AND ");
+
+    // Universal voted state: if one campaign marks voted, siblings and parent see the same voted reality.
+    if (updates.has_voted !== undefined) {
+         const voted =
+           updates.has_voted === true ||
+           updates.has_voted === "true" ||
+           updates.has_voted === 1 ||
+           updates.has_voted === "1";
+         const votedParamIndex = baseParams.length + 1;
+         const sql = `
+           WITH target_citizens AS (
+             SELECT DISTINCT p.citizen_id
+             FROM persons p
+             JOIN global_citizens g ON p.citizen_id = g.id
+             WHERE ${baseCondition}
+           )
+           UPDATE persons p2
+           SET has_voted = $${votedParamIndex},
+               status_day_d = CASE
+                 WHEN $${votedParamIndex}::boolean THEN 'VOTED'::day_d_status_enum
+                 WHEN p2.status_day_d = 'VOTED'::day_d_status_enum THEN 'PENDING'::day_d_status_enum
+                 ELSE p2.status_day_d
+               END,
+               updated_at = NOW()
+           WHERE p2.citizen_id IN (SELECT citizen_id FROM target_citizens)
+             AND p2.deleted_at IS NULL
+        `;
+        await client.query(sql, [...baseParams, voted]);
+    }
 
     // ADD TAG
     if (updates.add_tag) {
@@ -840,7 +881,7 @@ export async function personsBulkUpdate(
            SELECT $1, p.id, $${pIdx}, $${pIdxAssigned}
            FROM persons p
            JOIN global_citizens g ON p.citizen_id = g.id
-           WHERE p.campaign_id = $1 AND ${baseCondition}
+           WHERE ${baseCondition}
            ON CONFLICT DO NOTHING
         `;
         await client.query(sql, [...baseParams, updates.add_tag, actorUserId || null]);
@@ -853,7 +894,7 @@ export async function personsBulkUpdate(
            UPDATE persons p
            SET notes = COALESCE(notes, '') || E'\n' || $${pIdx}, updated_at = NOW()
            FROM global_citizens g
-           WHERE p.citizen_id = g.id AND p.campaign_id = $1 AND ${baseCondition}
+           WHERE p.citizen_id = g.id AND ${baseCondition}
         `;
         await client.query(sql, [...baseParams, updates.add_note]);
     }
@@ -865,7 +906,7 @@ export async function personsBulkUpdate(
            UPDATE persons p
            SET requests = COALESCE(requests, '[]'::jsonb) || $${pIdx}::jsonb, updated_at = NOW()
            FROM global_citizens g
-           WHERE p.citizen_id = g.id AND p.campaign_id = $1 AND ${baseCondition}
+           WHERE p.citizen_id = g.id AND ${baseCondition}
         `;
         // Ensure request is object or array? Implementation plan said object.
         await client.query(sql, [...baseParams, JSON.stringify(updates.add_request)]);
@@ -889,7 +930,7 @@ export async function personsBulkUpdate(
                financial_needs_fulfilled = ($${pIdx}::numeric > 0),
                updated_at = NOW()
            FROM global_citizens g
-           WHERE p.citizen_id = g.id AND p.campaign_id = $1 AND ${baseCondition}
+           WHERE p.citizen_id = g.id AND ${baseCondition}
         `;
         await client.query(sql, [...baseParams, amount]);
     }

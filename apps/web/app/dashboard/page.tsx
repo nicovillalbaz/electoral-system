@@ -121,7 +121,7 @@ export default function DashboardPage() {
     if (aIdx != bIdx) {
       return (aIdx == -1 ? rolePriority.length : aIdx) - (bIdx == -1 ? rolePriority.length : bIdx);
     }
-    return b.count - a.count;
+    return Number(b.count) - Number(a.count);
   });
 
   const formatRoleLabel = (role: string) => {

@@ -14,8 +14,6 @@ export async function stationsRoutes(app: FastifyInstance) {
     const body = z.object({
       name: z.string().min(2),
       address: z.string().optional(),
-      cityId: z.string().uuid().optional(),
-      zoneId: z.string().uuid().optional(),
       managerUserId: z.string().uuid().optional(),
     }).parse(req.body);
 
@@ -53,8 +51,6 @@ export async function stationsRoutes(app: FastifyInstance) {
     const body = z.object({
         name: z.string().min(2).optional(),
         address: z.string().optional(),
-        cityId: z.string().uuid().optional(),
-        zoneId: z.string().uuid().optional(),
         managerUserId: z.string().uuid().optional(),
         notes: z.string().optional(),
         metadata: z.any().optional(),

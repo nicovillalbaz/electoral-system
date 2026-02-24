@@ -1,6 +1,9 @@
 import { query, pool } from "../../db/query";
 import { taskCreate } from "../tasks/tasks.repo"; 
 
+const campaignHierarchyScope = (alias: string, campaignParamIndex: number) =>
+  `(${alias}.campaign_id = $${campaignParamIndex} OR ${alias}.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $${campaignParamIndex}))`;
+
 export async function markVoted(input: {
   campaignId: string;
   personId: string;
@@ -9,6 +12,20 @@ export async function markVoted(input: {
   method?: string | null;
   notes?: string | null;
 }) {
+  const personRes = await query<{ id: string; citizen_id: string }>(
+    `SELECT p.id, p.citizen_id
+     FROM persons p
+     WHERE p.id = $2
+       AND ${campaignHierarchyScope("p", 1)}
+       AND p.deleted_at IS NULL
+     LIMIT 1`,
+    [input.campaignId, input.personId],
+  );
+  if ((personRes.rowCount ?? 0) === 0) {
+    throw new Error("Person not found");
+  }
+  const target = personRes.rows[0];
+
   // 1) guardamos marca (idempotente por UNIQUE(campaign_id, person_id))
   await query(
     `INSERT INTO person_voted_marks (campaign_id, person_id, marked_by_user_id, station_id, method, notes)
@@ -29,17 +46,17 @@ export async function markVoted(input: {
     ]
   );
 
-  // 2) reflejamos estado actual en persons (Allows Parent to mark Child's person)
+  // 2) reflejamos estado votado de forma global para todas las campañas que compartan citizen_id.
   const res = await query(
     `UPDATE persons
      SET has_voted=true, status_day_d='VOTED', updated_at=now()
-     WHERE (campaign_id=$1 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) 
-       AND id=$2
+     WHERE citizen_id = $1
+       AND deleted_at IS NULL
      RETURNING *`,
-    [input.campaignId, input.personId]
+    [target.citizen_id]
   );
   
-  return res.rows[0];
+  return res.rows.find((row: any) => row.id === input.personId) ?? res.rows[0];
 }
 
 export async function listMissingByTerritory(input: {
@@ -219,26 +236,52 @@ export async function getDayDGrid(campaignId: string, params: {
 }
 
 // 4. Detección de Colisiones GLOBAL (Cross-PC)
-export async function checkCollision(campaignId: string, citizenId: string): Promise<{ active: boolean; details?: any }> {
-  // Buscamos si la persona tiene actividad RECIENTE (últimas 2 horas) 
-  // en OTRO puesto de comando diferente al actual se chequeará en el service
+export async function checkCollision(_campaignId: string, citizenId: string): Promise<{ active: boolean; details?: any }> {
+  // Actividad global por citizen_id para evitar colisiones entre PCs hermanas.
   const sql = `
-    SELECT 
-      lt.campaign_id,
-      lt.status,
-      lt.recorded_at,
-      u.full_name as operator_name
-    FROM logistics_tracking lt
-    JOIN users u ON lt.operator_id = u.id
-    JOIN persons p ON lt.person_id = p.id
-    WHERE p.citizen_id = $1 
-      AND (lt.campaign_id = $2 OR lt.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $2))
-      AND lt.recorded_at > NOW() - INTERVAL '2 hours'
-    ORDER BY lt.recorded_at DESC
+    SELECT *
+    FROM (
+      SELECT
+        p.campaign_id,
+        'VOTED'::text as status,
+        COALESCE(p.updated_at, p.created_at) as recorded_at,
+        NULL::text as operator_name
+      FROM persons p
+      WHERE p.citizen_id = $1
+        AND p.deleted_at IS NULL
+        AND p.has_voted = true
+
+      UNION ALL
+
+      SELECT
+        pvm.campaign_id,
+        'VOTED_MARK'::text as status,
+        pvm.marked_at as recorded_at,
+        u.full_name as operator_name
+      FROM person_voted_marks pvm
+      JOIN persons p ON pvm.person_id = p.id
+      LEFT JOIN users u ON pvm.marked_by_user_id = u.id
+      WHERE p.citizen_id = $1
+        AND pvm.marked_at > NOW() - INTERVAL '24 hours'
+
+      UNION ALL
+
+      SELECT
+        sc.campaign_id,
+        'CHECKED_IN'::text as status,
+        sc.checkin_at as recorded_at,
+        u.full_name as operator_name
+      FROM station_checkins sc
+      JOIN persons p ON sc.person_id = p.id
+      LEFT JOIN users u ON sc.checkin_by_user_id = u.id
+      WHERE p.citizen_id = $1
+        AND sc.checkin_at > NOW() - INTERVAL '24 hours'
+    ) x
+    ORDER BY x.recorded_at DESC
     LIMIT 1
   `;
   
-  const res = await query(sql, [citizenId, campaignId]);
+  const res = await query(sql, [citizenId]);
   if (res.rows.length > 0) {
     return { active: true, details: res.rows[0] };
   }
@@ -263,13 +306,26 @@ export async function updateDayDStatus(
                 has_voted = CASE WHEN $1 = 'VOTED' THEN true ELSE has_voted END,
                 updated_at = NOW()
             WHERE id = $2 
-              AND (campaign_id = $3 OR campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $3))
-            RETURNING id, status_day_d
+              AND ${campaignHierarchyScope("persons", 3)}
+            RETURNING id, status_day_d, citizen_id
         `;
         const res = await client.query(updateSql, [newStatus, personId, campaignId]);
         
         if (res.rowCount === 0) {
             throw new Error("Person not found");
+        }
+        const currentPerson = res.rows[0];
+
+        if (newStatus === "VOTED") {
+            await client.query(
+                `UPDATE persons
+                 SET has_voted = true,
+                     status_day_d = 'VOTED'::day_d_status_enum,
+                     updated_at = NOW()
+                 WHERE citizen_id = $1
+                   AND deleted_at IS NULL`,
+                [currentPerson.citizen_id],
+            );
         }
 
         // Log traking
@@ -280,7 +336,7 @@ export async function updateDayDStatus(
         await client.query(logSql, [campaignId, personId, newStatus, userId]);
 
         await client.query("COMMIT");
-        return res.rows[0];
+        return currentPerson;
     } catch (e) {
         await client.query("ROLLBACK");
         throw e;
@@ -288,3 +344,5 @@ export async function updateDayDStatus(
         client.release();
     }
 }
+
+

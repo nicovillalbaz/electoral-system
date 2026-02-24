@@ -1497,6 +1497,10 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_campaign ON events(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(campaign_id, event_type);
 CREATE INDEX IF NOT EXISTS idx_events_created ON events(campaign_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_person_created_at ON events(person_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_persons_citizen_id ON persons(citizen_id);
+CREATE INDEX IF NOT EXISTS idx_persons_created_at ON persons(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_global_citizens_created_at ON global_citizens(created_at DESC);
 
 
 -- Completed on 2026-02-10 22:52:16

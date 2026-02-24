@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import api from '../../../lib/api';
-import { MapPin, Plus, Activity, Users, CheckCircle, Car } from 'lucide-react';
+import { Pencil, Plus, Activity, Users, CheckCircle } from 'lucide-react';
 import { useDebounce } from 'use-debounce';
 
 import { useRouter } from 'next/navigation';
@@ -116,7 +116,7 @@ export default function StationsPage() {
                     </div>
                     
                     <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                         <button onClick={(e) => openEdit(e, s)} className="p-1 bg-zinc-800 rounded hover:bg-white hover:text-black text-white"><MapPin size={16} /></button>
+                         <button onClick={(e) => openEdit(e, s)} className="p-1 bg-zinc-800 rounded hover:bg-white hover:text-black text-white"><Pencil size={16} /></button>
                     </div>
                 </div>
               )
