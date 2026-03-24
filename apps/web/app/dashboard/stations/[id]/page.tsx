@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import safeApi from "../../../../lib/api"; // Adjusted path
+import { getApiErrorMessage } from "../../../../lib/api-error";
 import { Users, Truck, AlertTriangle, CheckCircle, Search, Plus, Trash2, Fuel, Sandwich, Bus } from "lucide-react";
+import { toast } from "sonner";
 
 // --- TYPES ---
 type DashboardData = {
@@ -53,9 +55,10 @@ export default function StationDashboardPage() {
         if (!confirm("Remove staff?")) return;
         try {
             await safeApi.delete(`/stations/${stationId}/collaborators/${personId}`);
-            fetchData();
+            await fetchData();
+            toast.success("Colaborador removido.");
         } catch (e) {
-            alert("Error removing");
+            toast.error(getApiErrorMessage(e, "Error removing"));
         }
     };
 

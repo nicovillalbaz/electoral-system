@@ -9,8 +9,13 @@ export async function checkinCreate(input: {
   notes?: string | null;
 }) {
   const res = await query(
-    `INSERT INTO station_checkins (campaign_id, station_id, person_id, recorded_by_user_id, vote_intent_snapshot, notes)
-     VALUES ($1,$2,$3,$4,$5,$6)
+    `INSERT INTO station_checkins (campaign_id, station_id, person_id, recorded_by_user_id, vote_intent_snapshot, notes, date_bucket)
+     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE)
+     ON CONFLICT (campaign_id, station_id, person_id, date_bucket)
+     DO UPDATE SET
+       recorded_by_user_id = COALESCE(EXCLUDED.recorded_by_user_id, station_checkins.recorded_by_user_id),
+       vote_intent_snapshot = COALESCE(EXCLUDED.vote_intent_snapshot, station_checkins.vote_intent_snapshot),
+       notes = COALESCE(EXCLUDED.notes, station_checkins.notes)
      RETURNING *`,
     [
       input.campaignId,

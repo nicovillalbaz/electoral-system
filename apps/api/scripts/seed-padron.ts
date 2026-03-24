@@ -39,6 +39,12 @@ function parseFecha(fechaStr?: string): Date | null {
   return new Date(anio, mes, dia);
 }
 
+function normalizePadronAddress(address?: string | null): string | null {
+  if (address === undefined || address === null) return null;
+  const normalized = String(address).replace(/\s+/g, " ").trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
 async function main() {
   // Validación de seguridad antes de arrancar
   if (!TARGET_CAMPAIGN_ID) {
@@ -156,6 +162,7 @@ async function main() {
       const docId = reg.numero_ced.toString().trim();
       const fechaNac = parseFecha(reg.fecha_naci);
       const fechaAfil = parseFecha(reg.fecha_afil);
+      const normalizedAddress = normalizePadronAddress(reg.direccion);
 
       // Insertamos y capturamos el ID (RETURNING id)
       const citizenRes = await client.query(
@@ -167,6 +174,7 @@ async function main() {
          ON CONFLICT (document_id) DO UPDATE SET
            first_name = EXCLUDED.first_name,
            last_name = EXCLUDED.last_name,
+           address = COALESCE(EXCLUDED.address, global_citizens.address),
            voting_table_id = EXCLUDED.voting_table_id,
            party_affiliation = EXCLUDED.party_affiliation,
            updated_at = now()
@@ -176,8 +184,7 @@ async function main() {
           reg.nombre.trim().toUpperCase(),
           reg.apellido.trim().toUpperCase(),
           fechaNac,
-          // Forzamos a que sea Texto (String) antes de hacer trim
-          reg.direccion ? String(reg.direccion).trim() : null,
+          normalizedAddress,
           reg.Afiliacion ? String(reg.Afiliacion).trim() : null,
           fechaAfil,
           tableId,

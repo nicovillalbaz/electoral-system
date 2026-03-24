@@ -14,6 +14,8 @@ import {
   Car,
 } from "lucide-react";
 import api from "../../../../lib/api";
+import { getApiErrorMessage } from "../../../../lib/api-error";
+import { toast } from "sonner";
 
 interface PersonModalProps {
   isOpen: boolean;
@@ -158,7 +160,7 @@ export default function PersonModal({
       fetchTags(personToEdit.id);
       setTimeout(() => fetchHistory(personToEdit.id), 500);
     } catch (e) {
-      alert("Error al asignar");
+      toast.error(getApiErrorMessage(e, "Error al asignar etiqueta"));
     }
   };
 
@@ -168,7 +170,7 @@ export default function PersonModal({
       await api.post("/tags/remove", { personId: personToEdit.id, tagId });
       fetchTags(personToEdit.id);
     } catch (e) {
-      alert("Error al quitar");
+      toast.error(getApiErrorMessage(e, "Error al quitar etiqueta"));
     }
   };
 
@@ -184,7 +186,7 @@ export default function PersonModal({
       if (personToEdit) handleAssignTag(newTag.id);
       setNewTagInput("");
     } catch (e) {
-      alert("Error al crear etiqueta");
+      toast.error(getApiErrorMessage(e, "Error al crear etiqueta"));
     }
   };
 
@@ -250,10 +252,10 @@ export default function PersonModal({
       }
       
       onSuccess();
+      toast.success(isEditing ? "Persona actualizada." : "Persona creada.");
       onClose();
     } catch (error) {
-      // error handled by alert below
-      alert("Error al guardar.");
+      toast.error(getApiErrorMessage(error, "Error al guardar."));
     } finally {
       setIsSubmitting(false);
     }

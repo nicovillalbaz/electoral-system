@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import safeApi from "../../../lib/api";
 import { Search, Siren } from "lucide-react";
 import VoterRow from "./components/VoterRow";
-import CrisisModal from "../components/CrisisModal";
 import { useDebounce } from "use-debounce";
 
 export default function DayDPage() {
@@ -86,8 +85,6 @@ export default function DayDPage() {
     }
   };
 
-  const [showCrisis, setShowCrisis] = useState(false);
-
   return (
     <div className="h-screen flex flex-col bg-zinc-950 overflow-hidden">
       <div
@@ -99,12 +96,6 @@ export default function DayDPage() {
             CONTROL DIA D
           </h1>
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => setShowCrisis(true)}
-              className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-bold text-xs uppercase animate-pulse flex items-center gap-2"
-            >
-              <Siren size={16} /> Reportar Incidente
-            </button>
             <div className="text-xs font-mono opacity-70">
               {voters.length} registros | Pagina {page}
             </div>
@@ -180,7 +171,6 @@ export default function DayDPage() {
         </div>
       </div>
 
-      {showCrisis && <CrisisModal onClose={() => setShowCrisis(false)} />}
     </div>
   );
 }

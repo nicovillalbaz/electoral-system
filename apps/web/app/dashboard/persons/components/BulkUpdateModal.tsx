@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import api from '../../../../lib/api';
+import { getApiErrorMessage } from '../../../../lib/api-error';
 import { AlertTriangle, Loader2, X, CheckCircle, Save, Plus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
+import { toast } from 'sonner';
 
 interface BulkUpdateModalProps {
   isOpen: boolean;
@@ -64,7 +66,7 @@ export default function BulkUpdateModal({ isOpen, onClose, onSuccess, activeFilt
         setCount(res.data.total);
         setStep(2);
     } catch(e) {
-        alert("Error al verificar registros");
+        toast.error(getApiErrorMessage(e, "Error al verificar registros"));
     } finally {
         setLoading(false);
     }
@@ -93,7 +95,7 @@ export default function BulkUpdateModal({ isOpen, onClose, onSuccess, activeFilt
           onSuccess();
           onClose();
       } catch (e: any) {
-          alert("Error: " + (e.response?.data?.error || e.message));
+          toast.error(getApiErrorMessage(e, "Error al ejecutar la edición masiva"));
       } finally {
           setLoading(false);
       }

@@ -48,12 +48,13 @@ export async function markVoted(input: {
 
   // 2) reflejamos estado votado de forma global para todas las campañas que compartan citizen_id.
   const res = await query(
-    `UPDATE persons
+    `UPDATE persons p
      SET has_voted=true, status_day_d='VOTED', updated_at=now()
-     WHERE citizen_id = $1
-       AND deleted_at IS NULL
+     WHERE p.citizen_id = $1
+       AND ${campaignHierarchyScope("p", 2)}
+       AND p.deleted_at IS NULL
      RETURNING *`,
-    [target.citizen_id]
+    [target.citizen_id, input.campaignId]
   );
   
   return res.rows.find((row: any) => row.id === input.personId) ?? res.rows[0];
@@ -236,7 +237,7 @@ export async function getDayDGrid(campaignId: string, params: {
 }
 
 // 4. Detección de Colisiones GLOBAL (Cross-PC)
-export async function checkCollision(_campaignId: string, citizenId: string): Promise<{ active: boolean; details?: any }> {
+export async function checkCollision(campaignId: string, citizenId: string): Promise<{ active: boolean; details?: any }> {
   // Actividad global por citizen_id para evitar colisiones entre PCs hermanas.
   const sql = `
     SELECT *
@@ -248,6 +249,7 @@ export async function checkCollision(_campaignId: string, citizenId: string): Pr
         NULL::text as operator_name
       FROM persons p
       WHERE p.citizen_id = $1
+        AND ${campaignHierarchyScope("p", 2)}
         AND p.deleted_at IS NULL
         AND p.has_voted = true
 
@@ -262,6 +264,8 @@ export async function checkCollision(_campaignId: string, citizenId: string): Pr
       JOIN persons p ON pvm.person_id = p.id
       LEFT JOIN users u ON pvm.marked_by_user_id = u.id
       WHERE p.citizen_id = $1
+        AND ${campaignHierarchyScope("pvm", 2)}
+        AND ${campaignHierarchyScope("p", 2)}
         AND pvm.marked_at > NOW() - INTERVAL '24 hours'
 
       UNION ALL
@@ -275,13 +279,15 @@ export async function checkCollision(_campaignId: string, citizenId: string): Pr
       JOIN persons p ON sc.person_id = p.id
       LEFT JOIN users u ON sc.checkin_by_user_id = u.id
       WHERE p.citizen_id = $1
+        AND ${campaignHierarchyScope("sc", 2)}
+        AND ${campaignHierarchyScope("p", 2)}
         AND sc.checkin_at > NOW() - INTERVAL '24 hours'
     ) x
     ORDER BY x.recorded_at DESC
     LIMIT 1
   `;
   
-  const res = await query(sql, [citizenId]);
+  const res = await query(sql, [citizenId, campaignId]);
   if (res.rows.length > 0) {
     return { active: true, details: res.rows[0] };
   }
@@ -298,33 +304,59 @@ export async function updateDayDStatus(
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
-        
-        // Update person (Hierarchy Support)
-        const updateSql = `
-            UPDATE persons 
-            SET status_day_d = $1::day_d_status_enum,
-                has_voted = CASE WHEN $1 = 'VOTED' THEN true ELSE has_voted END,
-                updated_at = NOW()
-            WHERE id = $2 
-              AND ${campaignHierarchyScope("persons", 3)}
-            RETURNING id, status_day_d, citizen_id
-        `;
-        const res = await client.query(updateSql, [newStatus, personId, campaignId]);
-        
-        if (res.rowCount === 0) {
+
+        // 1) Lock target row and read citizen_id in tenant scope.
+        const targetRes = await client.query(
+            `SELECT p.id, p.citizen_id
+             FROM persons p
+             WHERE p.id = $1
+               AND ${campaignHierarchyScope("p", 2)}
+               AND p.deleted_at IS NULL
+             FOR UPDATE`,
+            [personId, campaignId],
+        );
+
+        if (targetRes.rowCount === 0) {
             throw new Error("Person not found");
         }
-        const currentPerson = res.rows[0];
+        const currentPerson = targetRes.rows[0];
 
+        // 2) Deterministic lock order across rows for same citizen in this hierarchy.
+        await client.query(
+            `SELECT p.id
+             FROM persons p
+             WHERE p.citizen_id = $1
+               AND ${campaignHierarchyScope("p", 2)}
+               AND p.deleted_at IS NULL
+             ORDER BY p.id
+             FOR UPDATE`,
+            [currentPerson.citizen_id, campaignId],
+        );
+
+        // 3) Update requested row after locks.
+        const updateSql = `
+            UPDATE persons p
+            SET status_day_d = $1::day_d_status_enum,
+                has_voted = CASE WHEN $1 = 'VOTED' THEN true ELSE p.has_voted END,
+                updated_at = NOW()
+            WHERE p.id = $2 
+              AND ${campaignHierarchyScope("p", 3)}
+            RETURNING p.id, p.status_day_d, p.citizen_id
+        `;
+        const res = await client.query(updateSql, [newStatus, personId, campaignId]);
+        const updatedPerson = res.rows[0];
+
+        // 4) Propagate only inside the current hierarchy tree.
         if (newStatus === "VOTED") {
             await client.query(
-                `UPDATE persons
+                `UPDATE persons p
                  SET has_voted = true,
                      status_day_d = 'VOTED'::day_d_status_enum,
                      updated_at = NOW()
-                 WHERE citizen_id = $1
-                   AND deleted_at IS NULL`,
-                [currentPerson.citizen_id],
+                 WHERE p.citizen_id = $1
+                   AND ${campaignHierarchyScope("p", 2)}
+                   AND p.deleted_at IS NULL`,
+                [currentPerson.citizen_id, campaignId],
             );
         }
 
@@ -336,7 +368,7 @@ export async function updateDayDStatus(
         await client.query(logSql, [campaignId, personId, newStatus, userId]);
 
         await client.query("COMMIT");
-        return currentPerson;
+        return updatedPerson;
     } catch (e) {
         await client.query("ROLLBACK");
         throw e;

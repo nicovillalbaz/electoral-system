@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import { X, Save } from "lucide-react";
 import api from "../../../../lib/api";
+import { getApiErrorMessage } from "../../../../lib/api-error";
+import { toast } from "sonner";
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -54,7 +56,10 @@ export default function TaskModal({ isOpen, onClose, onSuccess, taskToEdit }: Ta
     e.preventDefault();
     setLoading(true);
     try {
-      if (!formData.title) return alert("Título requerido");
+      if (!formData.title) {
+        toast.error("Título requerido");
+        return;
+      }
       
       const payload = {
         ...formData,
@@ -63,14 +68,16 @@ export default function TaskModal({ isOpen, onClose, onSuccess, taskToEdit }: Ta
 
       if (isEditing) {
           await api.patch(`/tasks/${taskToEdit.id}`, payload);
+          toast.success("Tarea actualizada.");
       } else {
           await api.post("/tasks", payload);
+          toast.success("Tarea creada.");
       }
       
       onSuccess();
       onClose();
     } catch (error) {
-      alert("Error al guardar tarea");
+      toast.error(getApiErrorMessage(error, "Error al guardar tarea"));
     } finally {
       setLoading(false);
     }

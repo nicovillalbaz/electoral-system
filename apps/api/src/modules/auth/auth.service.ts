@@ -2,13 +2,20 @@ import { query } from "../../db/query";
 import { comparePassword, hashPassword } from "../../common/security/password";
 import { unauthorized, badRequest, notFound } from "../../common/http/errors";
 
-export async function login(email: string, passwordPlain: string, campaignId: string) {
+export async function login(email: string, passwordPlain: string) {
   const res = await query(
     `SELECT id, campaign_id, email, password_hash, full_name, role, is_active
      FROM users
-     WHERE email = $1 AND campaign_id = $2 AND deleted_at IS NULL`,
-    [email.toLowerCase(), campaignId]
+     WHERE email = $1 AND deleted_at IS NULL
+     ORDER BY created_at DESC
+     LIMIT 2`,
+    [email.toLowerCase()]
   );
+
+  if (res.rows.length === 0) throw unauthorized("Credenciales inválidas");
+  if (res.rows.length > 1) {
+    throw badRequest("Este email está asociado a múltiples campañas. Contacta al administrador.");
+  }
 
   const user = res.rows[0];
   if (!user) throw unauthorized("Credenciales inválidas");

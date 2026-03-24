@@ -1,4 +1,12 @@
 import { query } from "../../db/query";
+import { conflict } from "../../common/http/errors";
+
+const handleUserWriteError = (error: any): never => {
+  if (error?.code === "23505" && error?.constraint === "users_campaign_id_email_key") {
+    throw conflict("Ya existe un usuario con ese email en esta campana.");
+  }
+  throw error;
+};
 
 export async function userCreate(input: {
   campaignId: string;
@@ -8,13 +16,17 @@ export async function userCreate(input: {
   role: string;
   operationalRole?: string;
 }) {
-  const res = await query(
-    `INSERT INTO users (campaign_id, email, password_hash, full_name, role, operational_role, is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,true)
-     RETURNING id, campaign_id, email, full_name, role, operational_role, is_active, created_at`,
-    [input.campaignId, input.email, input.passwordHash, input.fullName, input.role, input.operationalRole]
-  );
-  return res.rows[0];
+  try {
+    const res = await query(
+      `INSERT INTO users (campaign_id, email, password_hash, full_name, role, operational_role, is_active)
+       VALUES ($1,$2,$3,$4,$5,$6,true)
+       RETURNING id, campaign_id, email, full_name, role, operational_role, is_active, created_at`,
+      [input.campaignId, input.email, input.passwordHash, input.fullName, input.role, input.operationalRole]
+    );
+    return res.rows[0];
+  } catch (error) {
+    handleUserWriteError(error);
+  }
 }
 
 export async function userList(campaignId: string) {
@@ -83,12 +95,16 @@ export async function userUpdate(
 
   updates.push(`updated_at = NOW()`);
 
-  const res = await query(
-    `UPDATE users
-     SET ${updates.join(", ")}
-     WHERE campaign_id=$1 AND id=$2 AND deleted_at IS NULL
-     RETURNING id, campaign_id, email, full_name, role, operational_role, is_active, assigned_station_id`,
-    params
-  );
-  return res.rows[0];
+  try {
+    const res = await query(
+      `UPDATE users
+       SET ${updates.join(", ")}
+       WHERE campaign_id=$1 AND id=$2 AND deleted_at IS NULL
+       RETURNING id, campaign_id, email, full_name, role, operational_role, is_active, assigned_station_id`,
+      params
+    );
+    return res.rows[0];
+  } catch (error) {
+    handleUserWriteError(error);
+  }
 }

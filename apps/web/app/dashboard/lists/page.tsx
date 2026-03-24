@@ -5,6 +5,8 @@ import {
   Plus, List as ListIcon, MapPin, Calendar, CheckCircle, Trash2, ArrowRight 
 } from "lucide-react";
 import api from "../../../lib/api";
+import { getApiErrorMessage } from "../../../lib/api-error";
+import { toast } from "sonner";
 import FilterModal from "../persons/components/FilterModal";
 
 export default function ListsIndexPage() {
@@ -14,16 +16,25 @@ export default function ListsIndexPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [availableAddresses, setAvailableAddresses] = useState<string[]>([]);
   const [availableTags, setAvailableTags] = useState<any[]>([]);
+  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+  const [isCreatingList, setIsCreatingList] = useState(false);
+  const [deletingListId, setDeletingListId] = useState<string | null>(null);
 
   // Cargar listas y datos maestros al iniciar
   useEffect(() => {
     fetchLists();
     const fetchMasterData = async () => {
       try {
-        const resAddr = await api.get('/persons/addresses');
-        setAvailableAddresses(resAddr.data);
-        const resTags = await api.get('/tags');
-        setAvailableTags(resTags.data);
+        const results = await Promise.allSettled([
+          api.get('/persons/addresses'),
+          api.get('/tags'),
+          api.get('/users'),
+        ]);
+        const [resAddr, resTags, resUsers] = results;
+
+        if (resAddr.status === "fulfilled") setAvailableAddresses(resAddr.value.data);
+        if (resTags.status === "fulfilled") setAvailableTags(resTags.value.data);
+        if (resUsers.status === "fulfilled") setAvailableUsers(resUsers.value.data);
       } catch (e) {
         // silently ignore
       }
@@ -43,10 +54,13 @@ export default function ListsIndexPage() {
   };
 
   const handleCreateList = async (filters: any) => {
+    if (isCreatingList) return;
     try {
       // 1. Pedir nombre al usuario (simple prompt por ahora, o podrías mejorar el modal)
       const name = prompt("Nombre para tu nueva lista:", "Nueva Lista Inteligente");
       if (!name) return;
+
+      setIsCreatingList(true);
 
       // 2. Crear en backend
       await api.post("/lists", {
@@ -54,24 +68,33 @@ export default function ListsIndexPage() {
         filters, 
         icon: "list" // Icono por defecto
       });
+      toast.success("Lista creada exitosamente.");
       
       // 3. Recargar
       setShowCreateModal(false);
-      fetchLists();
+      await fetchLists();
     } catch (e) {
-      alert("Error al crear la lista");
+      toast.error(getApiErrorMessage(e, "Error al crear la lista"));
+      throw e;
+    } finally {
+      setIsCreatingList(false);
     }
   };
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
+    if (deletingListId === id) return;
     e.stopPropagation(); // Evitar entrar a la lista al hacer click en borrar
     if (!confirm("¿Seguro que quieres borrar esta lista?")) return;
     
     try {
+      setDeletingListId(id);
       await api.delete(`/lists/${id}`);
-      fetchLists();
+      toast.success("Lista eliminada exitosamente.");
+      await fetchLists();
     } catch (e) {
-      // silently ignore
+      toast.error(getApiErrorMessage(e, "Error al eliminar la lista"));
+    } finally {
+      setDeletingListId(null);
     }
   };
 
@@ -96,7 +119,8 @@ export default function ListsIndexPage() {
         </div>
         <button 
           onClick={() => setShowCreateModal(true)}
-          className="bg-white text-black px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-zinc-200 transition-colors shadow-lg hover:shadow-xl"
+          className="bg-white text-black px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-zinc-200 transition-colors shadow-lg hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isCreatingList}
         >
           <Plus size={20} strokeWidth={3} /> CREAR LISTA
         </button>
@@ -125,9 +149,10 @@ export default function ListsIndexPage() {
                 {!list.is_favorite && ( // No dejar borrar las del sistema si son favoritas
                     <button 
                         onClick={(e) => handleDelete(e, list.id)}
-                        className="text-zinc-600 hover:text-red-500 p-2 transition-colors z-10"
+                        className="text-zinc-600 hover:text-red-500 p-2 transition-colors z-10 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={deletingListId === list.id}
                     >
-                        <Trash2 size={18}/>
+                        {deletingListId === list.id ? "..." : <Trash2 size={18}/>}
                     </button>
                 )}
               </div>
@@ -155,10 +180,12 @@ export default function ListsIndexPage() {
       {/* MODAL PARA CREAR (Reutilizamos FilterModal) */}
       <FilterModal 
         isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+        onClose={() => !isCreatingList && setShowCreateModal(false)}
         onApply={handleCreateList}
         availableAddresses={availableAddresses}
         availableTags={availableTags}
+        availableUsers={availableUsers}
+        isSubmitting={isCreatingList}
       />
     </div>
   );

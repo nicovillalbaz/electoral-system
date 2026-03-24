@@ -20,7 +20,8 @@ export async function tasksRoutes(app: FastifyInstance) {
     }).parse(req.query);
 
     const campaignId = req.user.campaignId;
-    return tasksList(campaignId, queryZ);
+    const limit = Math.min(queryZ.limit ?? 50, 200);
+    return tasksList(campaignId, { ...queryZ, limit });
   });
 
   // 2. CREATE TASK

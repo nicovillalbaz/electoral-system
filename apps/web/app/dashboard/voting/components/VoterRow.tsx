@@ -1,6 +1,8 @@
 import { memo, useState, useRef, useEffect } from "react";
 import { Check, User, MapPin, Truck, AlertTriangle, DollarSign, CheckCircle, Vote, X, Car } from "lucide-react";
 import safeApi from "../../../../lib/api";
+import { getApiErrorMessage } from "../../../../lib/api-error";
+import { toast } from "sonner";
 
 type Voter = {
     id: string;
@@ -48,6 +50,16 @@ const statusLabels: any = {
     VOTED: "YA VOTÓ"
 };
 
+const QUICK_AMOUNT_VALUES = [50000, 100000] as const;
+type QuickAmountPreset = `${(typeof QUICK_AMOUNT_VALUES)[number]}` | "MANUAL";
+
+const resolveQuickAmountPreset = (amount: number): QuickAmountPreset => {
+    if (QUICK_AMOUNT_VALUES.includes(amount as (typeof QUICK_AMOUNT_VALUES)[number])) {
+        return String(amount) as QuickAmountPreset;
+    }
+    return "MANUAL";
+};
+
 const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
     const [openPopover, setOpenPopover] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -55,6 +67,7 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
     // Temp State for Inputs
     const [tempStationId, setTempStationId] = useState("");
     const [tempFinanceAmount, setTempFinanceAmount] = useState(0);
+    const [financePreset, setFinancePreset] = useState<QuickAmountPreset>("MANUAL");
     const [tempNotes, setTempNotes] = useState("");
     const [tempRequests, setTempRequests] = useState<any[]>([]);
     const [tempNeedsTransport, setTempNeedsTransport] = useState(false);
@@ -87,7 +100,9 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
             setTempStationId(voter.assigned_station_id || "");
         }
         if (openPopover === 'FINANCE') {
-            setTempFinanceAmount(voter.financial_amount ? Number(voter.financial_amount) : 0);
+            const currentAmount = voter.financial_amount ? Number(voter.financial_amount) : 0;
+            setTempFinanceAmount(currentAmount);
+            setFinancePreset(resolveQuickAmountPreset(currentAmount));
         }
         if (openPopover === 'NOTES') {
             setTempNotes(voter.notes || "");
@@ -136,11 +151,12 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
             await safeApi.patch(`/persons/${voter.id}`, patch);
 
             onUpdate({ ...voter, ...patch }); // Optimistic
+            toast.success("Cambios guardados.");
             setOpenPopover(null);
 
         } catch (e) {
             console.error(e);
-            alert("Error al guardar cambios. Intente nuevamente.");
+            toast.error(getApiErrorMessage(e, "Error al guardar cambios. Intente nuevamente."));
         } finally {
             setLoading(false);
         }
@@ -154,11 +170,11 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
             return;
         }
         if (voter.status_day_d === 'VOTED') {
-            alert("Esta persona ya figura como VOTO. No se puede marcar paso por PC.");
+            toast.warning("Esta persona ya figura como VOTO. No se puede marcar paso por PC.");
             return;
         }
         if (!tempStationId) {
-            alert("Asigna un PC antes de registrar el paso.");
+            toast.warning("Asigna un PC antes de registrar el paso.");
             return;
         }
         setLoading(true);
@@ -172,10 +188,11 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
                 campaign_status: 'VISITED_PC',
                 status_day_d: 'CHECKED_IN'
             });
+            toast.success("Paso por PC registrado.");
             setOpenPopover(null);
         } catch (e) {
             console.error(e);
-            alert("Error al registrar paso por PC.");
+            toast.error(getApiErrorMessage(e, "Error al registrar paso por PC."));
         } finally {
             setLoading(false);
         }
@@ -189,7 +206,7 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
         }
         const amount = Number(tempFinanceAmount);
         if (!Number.isFinite(amount) || amount <= 0) {
-            alert("Ingrese un monto válido.");
+            toast.warning("Ingrese un monto válido.");
             return;
         }
         setLoading(true);
@@ -201,10 +218,11 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
                 financial_amount: amount, 
                 financial_needs_fulfilled: true 
             });
+            toast.success("Viático registrado.");
             setOpenPopover(null);
         } catch (e) {
             console.error(e);
-            alert("Error al registrar viático.");
+            toast.error(getApiErrorMessage(e, "Error al registrar viático."));
         } finally {
             setLoading(false);
         }
@@ -236,10 +254,11 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
                 needs_transport: patch.needsTransport ?? voter.needs_transport,
                 transport_status: patch.transportStatus ?? voter.transport_status,
             });
+            toast.success("Transporte actualizado.");
             setOpenPopover(null);
         } catch (e) {
             console.error(e);
-            alert("Error al guardar transporte.");
+            toast.error(getApiErrorMessage(e, "Error al guardar transporte."));
         } finally {
             setLoading(false);
         }
@@ -267,10 +286,11 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
         try {
             await safeApi.post('/voting/status', { personId: voter.id, status: newStatus });
             onUpdate({ ...voter, status_day_d: newStatus });
+            toast.success("Estado de voto actualizado.");
             setOpenPopover(null);
         } catch (e) {
              console.error(e);
-             alert("Error al actualizar estado.");
+             toast.error(getApiErrorMessage(e, "Error al actualizar estado."));
         } finally {
             setLoading(false);
         }
@@ -282,7 +302,7 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
             await safeApi.patch(`/persons/${voter.id}`, { currentVoteIntent: val });
             onUpdate({ ...voter, current_vote_intent: val });
             setOpenPopover(null);
-        } catch(e) { alert("Error"); setLoading(false); }
+        } catch(e) { toast.error(getApiErrorMessage(e, "Error al actualizar intención de voto.")); setLoading(false); }
     };
 
     const togglePopover = (name: string, e: React.MouseEvent) => {
@@ -532,13 +552,34 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
                              ) : (
                                  <>
                                      <label className="text-xs font-bold text-zinc-400">MONTO (Gs.)</label>
-                                     <input 
-                                         type="number" 
-                                         placeholder="Monto"
+                                     <select
                                          className="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
-                                         value={tempFinanceAmount}
-                                         onChange={(e) => setTempFinanceAmount(Number(e.target.value))}
-                                     />
+                                         value={financePreset}
+                                         onChange={(e) => {
+                                             const nextPreset = e.target.value as QuickAmountPreset;
+                                             setFinancePreset(nextPreset);
+                                             if (nextPreset !== "MANUAL") {
+                                                 setTempFinanceAmount(Number(nextPreset));
+                                             }
+                                         }}
+                                     >
+                                         <option value="50000">Gs. 50.000</option>
+                                         <option value="100000">Gs. 100.000</option>
+                                         <option value="MANUAL">Otro (manual)</option>
+                                     </select>
+                                     {financePreset === "MANUAL" ? (
+                                         <input 
+                                             type="number" 
+                                             placeholder="Monto"
+                                             className="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
+                                             value={tempFinanceAmount}
+                                             onChange={(e) => setTempFinanceAmount(Number(e.target.value))}
+                                         />
+                                     ) : (
+                                         <div className="text-xs text-zinc-400 bg-zinc-950 border border-zinc-800 rounded p-2 font-mono">
+                                             Monto seleccionado: Gs. {tempFinanceAmount.toLocaleString("es-PY")}
+                                         </div>
+                                     )}
                                      <button 
                                         onClick={handleFinanceSave}
                                         disabled={loading}

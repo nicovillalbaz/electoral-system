@@ -422,6 +422,7 @@ export default function PersonsPage() {
         }}
         availableAddresses={availableAddresses} 
         availableTags={availableTags}
+        availableUsers={users}
       />
 
     </div>

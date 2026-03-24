@@ -1,5 +1,14 @@
 import { pool, query } from "../../db/query";
 
+const normalizedCitizenAddressSql =
+  "TRIM(UPPER(REGEXP_REPLACE(g.address, '\\s+', ' ', 'g')))";
+
+const normalizeAddressFilter = (value?: string | null) => {
+  if (!value) return null;
+  const normalized = value.replace(/\s+/g, " ").trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+};
+
 export async function listCreate(campaignId: string, data: any) {
   const res = await query(
     `INSERT INTO lists (campaign_id, name, description, icon, filters, is_favorite)
@@ -50,18 +59,20 @@ export async function ensureSystemLists(campaignId: string) {
     client.release();
   }
 }
-export async function listsGetAll(campaignId: string, search?: string) {
+export async function listsGetAll(campaignId: string, search?: string, limit: number = 50, offset: number = 0) {
   await ensureSystemLists(campaignId);
 
   let sql = `SELECT * FROM lists WHERE campaign_id = $1 AND deleted_at IS NULL`;
   const params: any[] = [campaignId];
+  let paramIndex = 2;
 
   if (search) {
-      sql += ` AND name ILIKE $2`;
+      sql += ` AND name ILIKE $${paramIndex++}`;
       params.push(`%${search}%`);
   }
 
-  sql += ` ORDER BY is_favorite DESC, name ASC`;
+  sql += ` ORDER BY is_favorite DESC, name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+  params.push(limit, offset);
 
   return query(sql, params).then(r => r.rows);
 }
@@ -104,9 +115,12 @@ function buildSmartQuery(filters: any, baseParamIndex: number) {
 
   // 1. Filtro por BARRIO (Tabla global_citizens)
   if (filters.address && filters.address.trim() !== "") {
-    conditions.push(`g.address = $${idx}`);
-    values.push(filters.address);
-    idx++;
+    const normalizedAddress = normalizeAddressFilter(filters.address);
+    if (normalizedAddress) {
+      conditions.push(`${normalizedCitizenAddressSql} = $${idx}`);
+      values.push(normalizedAddress);
+      idx++;
+    }
   }
 
   // 2. Filtro por INTENCIÓN DE VOTO (Tabla persons)
@@ -140,6 +154,17 @@ function buildSmartQuery(filters: any, baseParamIndex: number) {
     )`);
     values.push(filters.tagId);
     idx++;
+  }
+
+  const assignedUserFilter = filters.assignedUserId || filters.assigned_user_id;
+  if (assignedUserFilter && assignedUserFilter !== "ALL") {
+    if (assignedUserFilter === "__UNASSIGNED__") {
+      conditions.push(`p.assigned_user_id IS NULL`);
+    } else {
+      conditions.push(`p.assigned_user_id = $${idx}`);
+      values.push(assignedUserFilter);
+      idx++;
+    }
   }
 
   // 6. Filtro LOGÍSTICA (Transporte)
@@ -190,13 +215,118 @@ function buildSmartQuery(filters: any, baseParamIndex: number) {
   };
 }
 
+type ListSortDir = "ASC" | "DESC";
+
+function resolveListMembersOrder(sortBy?: string, sortDir: ListSortDir = "ASC") {
+  if (!sortBy) {
+    return "ORDER BY p.updated_at DESC";
+  }
+
+  const safeSortDir: ListSortDir = sortDir === "DESC" ? "DESC" : "ASC";
+  let orderByClause = "g.last_name";
+
+  switch (sortBy) {
+    case "document_id":
+      orderByClause = `CAST(NULLIF(g.document_id, '') AS BIGINT)`;
+      break;
+    case "first_name":
+      orderByClause = "g.first_name";
+      break;
+    case "last_name":
+      orderByClause = "g.last_name";
+      break;
+    case "voting_order_number":
+      orderByClause = "g.voting_order_number";
+      break;
+    case "voting_table_number":
+      orderByClause = "g.voting_table_number";
+      break;
+    case "address":
+      orderByClause = "g.address";
+      break;
+    case "phone_number":
+      orderByClause = "g.phone_number";
+      break;
+    case "whatsapp_number":
+      orderByClause = "p.whatsapp_number";
+      break;
+    case "party_affiliation":
+      orderByClause = "g.party_affiliation";
+      break;
+    case "party_affiliation_date":
+      orderByClause = "g.party_affiliation_date";
+      break;
+    case "birthdate":
+      orderByClause = "g.birthdate";
+      break;
+    case "sex":
+      orderByClause = "g.sex";
+      break;
+    case "location_department":
+      orderByClause = "g.location_department";
+      break;
+    case "location_district":
+      orderByClause = "g.location_district";
+      break;
+    case "location_place":
+      orderByClause = "g.location_place";
+      break;
+    case "current_vote_intent":
+      orderByClause = "p.current_vote_intent";
+      break;
+    case "has_voted":
+      orderByClause = "p.has_voted";
+      break;
+    case "campaign_status":
+      orderByClause = "p.campaign_status";
+      break;
+    case "is_visited":
+      orderByClause = "p.is_visited";
+      break;
+    case "needs_transport":
+      orderByClause = "p.needs_transport";
+      break;
+    case "transport_status":
+      orderByClause = "p.transport_status";
+      break;
+    case "has_financial_needs":
+      orderByClause = "p.has_financial_needs";
+      break;
+    case "financial_needs_fulfilled":
+      orderByClause = "p.financial_needs_fulfilled";
+      break;
+    case "financial_amount":
+      orderByClause = "p.financial_amount";
+      break;
+    case "assigned_station_id":
+      orderByClause = "p.assigned_station_id";
+      break;
+    case "assigned_user_id":
+      orderByClause = "p.assigned_user_id";
+      break;
+    case "status_day_d":
+      orderByClause = "p.status_day_d";
+      break;
+    case "station_checkin_at":
+      orderByClause = "p.station_checkin_at";
+      break;
+    default:
+      orderByClause = "g.last_name";
+      break;
+  }
+
+  return `ORDER BY ${orderByClause} ${safeSortDir}, p.updated_at DESC`;
+}
+
 export async function listGetMembers(
   campaignId: string,
   listId: string,
   limit: number = 50,
   offset: number = 0,
   filterOverride?: any,
-  search?: string
+  search?: string,
+  sortBy?: string,
+  sortDir?: ListSortDir
 ) {
   // 1. Primero obtenemos la definición de la lista para ver sus filtros
   const listDef = await query(
@@ -216,6 +346,7 @@ export async function listGetMembers(
   const { whereClause, values } = buildSmartQuery(filters, 2);
   const normalizedSearch = search?.trim();
   let searchClause = "";
+  const orderByClause = resolveListMembersOrder(sortBy, sortDir);
 
   if (normalizedSearch) {
     const searchParamIndex = values.length + 2;
@@ -249,6 +380,8 @@ export async function listGetMembers(
         p.whatsapp_number,
         p.assigned_station_id,
         p.assigned_user_id,
+        p.status_day_d,
+        p.station_checkin_at,
         p.requests,
         p.notes,
         g.document_id, 
@@ -256,8 +389,13 @@ export async function listGetMembers(
         g.last_name, 
         g.address, 
         g.party_affiliation, 
+        g.party_affiliation_date,
+        g.birthdate,
+        g.sex,
         g.voting_order_number, 
         g.phone_number,
+        g.location_department,
+        g.location_district,
         g.location_place,
         g.voting_table_number,
         count(*) OVER() as full_count
@@ -266,7 +404,7 @@ export async function listGetMembers(
     WHERE p.campaign_id = $1 AND p.deleted_at IS NULL
     ${whereClause}
     ${searchClause}
-    ORDER BY p.updated_at DESC
+    ${orderByClause}
     LIMIT $${values.length + 2} OFFSET $${values.length + 3}
   `;
 

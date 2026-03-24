@@ -18,7 +18,7 @@ export async function checkinsRoutes(app: FastifyInstance) {
     },
   );
 
-  // crear checkin (anti duplicado por UNIQUE (campaign_id, station_id, person_id))
+  // crear checkin (idempotente por UNIQUE (campaign_id, station_id, person_id, date_bucket))
   app.post("/", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR","STATION_MANAGER","OPERATOR","VOLUNTEER"])] }, async (req: any) => {
     const body = z.object({
       stationId: z.string().uuid(),

@@ -8,6 +8,14 @@ const campaignHierarchyScope = (paramIndex: number, alias = "p") =>
   `(${alias}.campaign_id = $${paramIndex} OR ${alias}.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $${paramIndex}))`;
 
 
+const normalizedCitizenAddressSql =
+  "TRIM(UPPER(REGEXP_REPLACE(g.address, '\\s+', ' ', 'g')))";
+
+const normalizeAddressFilter = (value?: string | null) => {
+  if (!value) return null;
+  const normalized = value.replace(/\s+/g, " ").trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+};
 export async function personsList(
   campaignId: string,
   params: {
@@ -22,6 +30,7 @@ export async function personsList(
     votedStatus?: string;
     campaignStatus?: string; 
     tagId?: string;
+    assignedUserId?: string;
     needsTransport?: string;
     transportStatus?: string;
     hasRequests?: string;
@@ -54,39 +63,10 @@ export async function personsList(
 
   // 2. FILTRO DE ZONA INTELIGENTE
   if (params.address) {
-    if (params.address === "B° CRISTÓBAL COLÓN") {
-      conditions.push(`g.address ILIKE '%COLON%'`);
-    } else if (params.address === "B° CENTRO") {
-      conditions.push(
-        `(g.address ILIKE '%CENTRO%' OR g.address ILIKE '%CASCO%')`,
-      );
-    } else if (params.address === "B° YBYHANGUY 1") {
-      conditions.push(
-        `(g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%') AND (g.address ILIKE '%1%' OR g.address ILIKE '%I%')`,
-      );
-    } else if (params.address === "B° YBYHANGUY 2") {
-      conditions.push(
-        `(g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%') AND (g.address ILIKE '%2%' OR g.address ILIKE '%II%')`,
-      );
-    } else if (params.address === "B° PIRAYU'I") {
-      conditions.push(`g.address ILIKE '%PIRAYU%'`);
-    } else if (params.address === "B° HERIBERTA MATIAUDA") {
-      conditions.push(`g.address ILIKE '%MATIAUDA%'`);
-    } else if (params.address === "B° CIERVO CUA") {
-      conditions.push(`g.address ILIKE '%CIERVO%'`);
-    } else if (params.address === "B° SANTA LIBRADA") {
-      conditions.push(`g.address ILIKE '%LIBRADA%'`);
-    } else if (params.address === "B° SANTA ROSALINA") {
-      conditions.push(
-        `(g.address ILIKE '%ROSALINA%' OR g.address ILIKE '%ROSA DE LIMA%')`,
-      );
-    } else if (params.address === "B° PUERTA DEL LAGO") {
-      conditions.push(
-        `(g.address ILIKE '%PUERTA%' OR g.address ILIKE '%LAGO%')`,
-      );
-    } else {
-      conditions.push(`g.address = $${paramIndex}`);
-      queryParams.push(params.address);
+    const normalizedAddress = normalizeAddressFilter(params.address);
+    if (normalizedAddress) {
+      conditions.push(`${normalizedCitizenAddressSql} = $${paramIndex}`);
+      queryParams.push(normalizedAddress);
       paramIndex++;
     }
   }
@@ -125,7 +105,18 @@ export async function personsList(
     paramIndex++;
   }
 
-  // 8. Filtro Pedidos (Tiene pedidos?)
+  // 8. Filtro Responsable/Puntero
+  if (params.assignedUserId && params.assignedUserId !== "ALL") {
+    if (params.assignedUserId === "__UNASSIGNED__") {
+      conditions.push(`p.assigned_user_id IS NULL`);
+    } else {
+      conditions.push(`p.assigned_user_id = $${paramIndex}`);
+      queryParams.push(params.assignedUserId);
+      paramIndex++;
+    }
+  }
+
+  // 9. Filtro Pedidos (Tiene pedidos?)
   if (params.needsTransport && params.needsTransport !== "ALL") {
       const val = params.needsTransport === "true";
       conditions.push(`p.needs_transport = $${paramIndex}`);
@@ -139,12 +130,12 @@ export async function personsList(
       paramIndex++;
   }
 
-  // 8. Filtro Pedidos (Tiene pedidos?)
+  // 10. Filtro Pedidos (Tiene pedidos?)
   if (params.hasRequests === 'true') {
       conditions.push(`jsonb_array_length(p.requests) > 0`);
   }
 
-  // 9. Filtro Solicitud Financiera
+  // 11. Filtro Solicitud Financiera
   if (params.hasFinancialNeeds && params.hasFinancialNeeds !== 'ALL') {
       const val = params.hasFinancialNeeds === 'true';
       conditions.push(`p.has_financial_needs = $${paramIndex}`);
@@ -152,7 +143,7 @@ export async function personsList(
       paramIndex++;
   }
 
-  // 10. Filtro Ayuda Entregada
+  // 12. Filtro Ayuda Entregada
   if (params.financialNeedsFulfilled && params.financialNeedsFulfilled !== 'ALL') {
       const val = params.financialNeedsFulfilled === 'true';
       conditions.push(`p.financial_needs_fulfilled = $${paramIndex}`);
@@ -653,42 +644,20 @@ export async function personUpdate(
 // OBTENER DIRECCIONES ÚNICAS (Para el filtro desplegable)
 export async function personsGetUniqueAddresses(campaignId: string) {
   const sql = `
-    SELECT DISTINCT
-      CASE 
-        -- 1. Agrupación de zonas conocidas (Limpieza del caos)
-        WHEN g.address ILIKE '%COLON%' THEN 'B° CRISTÓBAL COLÓN'
-        WHEN g.address ILIKE '%CENTRO%' OR g.address ILIKE '%CASCO%' THEN 'B° CENTRO'
-        WHEN (g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%' OR g.address ILIKE '%YBU%') AND (g.address ILIKE '%1%' OR g.address ILIKE '%I%') THEN 'B° YBYHANGUY 1'
-        WHEN (g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%' OR g.address ILIKE '%YBU%') AND (g.address ILIKE '%2%' OR g.address ILIKE '%II%') THEN 'B° YBYHANGUY 2'
-        WHEN g.address ILIKE '%PIRAYU%' THEN 'B° PIRAYU''I'
-        WHEN g.address ILIKE '%MATIAUDA%' THEN 'B° HERIBERTA MATIAUDA'
-        WHEN g.address ILIKE '%CIERVO%' THEN 'B° CIERVO CUA'
-        WHEN g.address ILIKE '%LIBRADA%' THEN 'B° SANTA LIBRADA'
-        WHEN g.address ILIKE '%ROSALINA%' OR g.address ILIKE '%ROSA DE LIMA%' THEN 'B° SANTA ROSALINA'
-        WHEN g.address ILIKE '%PUERTA%' OR g.address ILIKE '%LAGO%' THEN 'B° PUERTA DEL LAGO'
-        WHEN g.address ILIKE '%MERCEDES%' THEN 'B° LAS MERCEDES'
-        WHEN g.address ILIKE '%SAN MIGUEL%' THEN 'B° SAN MIGUEL'
-        WHEN g.address ILIKE '%STO DOMINGO%' OR g.address ILIKE '%SANTO DOMINGO%' THEN 'B° SANTO DOMINGO'
-        
-        -- 2. "APRENDIZAJE": Si la dirección empieza formalmente, la aceptamos como nueva zona
-        WHEN g.address ILIKE 'B° %' OR g.address ILIKE 'BARRIO %' THEN UPPER(g.address)
-        
-        -- 3. Todo lo demás (Calles sueltas, números, etc.) se agrupa para no ensuciar
-        ELSE 'OTRAS ZONAS'
-      END as clean_zone
+    SELECT DISTINCT ${normalizedCitizenAddressSql} AS normalized_address
     FROM persons p
     JOIN global_citizens g ON p.citizen_id = g.id
     WHERE ${campaignHierarchyScope(1, "p")}
       AND p.deleted_at IS NULL
-      AND g.address IS NOT NULL 
-      AND length(g.address) > 2
-    ORDER BY clean_zone ASC
+      AND g.address IS NOT NULL
+      AND NULLIF(TRIM(g.address), '') IS NOT NULL
+    ORDER BY normalized_address ASC
   `;
 
   const res = await query(sql, [campaignId]);
-
-  // Devolvemos la lista única limpia
-  return res.rows.map((r) => r.clean_zone).filter((z) => z !== "OTRAS ZONAS");
+  return res.rows
+    .map((r) => r.normalized_address as string | null)
+    .filter((address): address is string => !!address);
 }
 
 // MASIVE UPDATE
@@ -726,29 +695,10 @@ export async function personsBulkUpdate(
     }
 
     if (filterParams.address) {
-       if (filterParams.address === "B° CRISTÓBAL COLÓN") {
-          conditions.push(`g.address ILIKE '%COLON%'`);
-       } else if (filterParams.address === "B° CENTRO") {
-          conditions.push(`(g.address ILIKE '%CENTRO%' OR g.address ILIKE '%CASCO%')`);
-       } else if (filterParams.address === "B° YBYHANGUY 1") {
-          conditions.push(`(g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%') AND (g.address ILIKE '%1%' OR g.address ILIKE '%I%')`);
-       } else if (filterParams.address === "B° YBYHANGUY 2") {
-          conditions.push(`(g.address ILIKE '%YBY%' OR g.address ILIKE '%YVY%') AND (g.address ILIKE '%2%' OR g.address ILIKE '%II%')`);
-       } else if (filterParams.address === "B° PIRAYU'I") {
-          conditions.push(`g.address ILIKE '%PIRAYU%'`);
-       } else if (filterParams.address === "B° HERIBERTA MATIAUDA") {
-          conditions.push(`g.address ILIKE '%MATIAUDA%'`);
-       } else if (filterParams.address === "B° CIERVO CUA") {
-          conditions.push(`g.address ILIKE '%CIERVO%'`);
-       } else if (filterParams.address === "B° SANTA LIBRADA") {
-          conditions.push(`g.address ILIKE '%LIBRADA%'`);
-       } else if (filterParams.address === "B° SANTA ROSALINA") {
-          conditions.push(`(g.address ILIKE '%ROSALINA%' OR g.address ILIKE '%ROSA DE LIMA%')`);
-       } else if (filterParams.address === "B° PUERTA DEL LAGO") {
-          conditions.push(`(g.address ILIKE '%PUERTA%' OR g.address ILIKE '%LAGO%')`);
-       } else {
-          conditions.push(`g.address = $${paramIndex}`);
-          queryParams.push(filterParams.address);
+       const normalizedAddress = normalizeAddressFilter(filterParams.address);
+       if (normalizedAddress) {
+          conditions.push(`${normalizedCitizenAddressSql} = $${paramIndex}`);
+          queryParams.push(normalizedAddress);
           paramIndex++;
        }
     }
@@ -778,6 +728,17 @@ export async function personsBulkUpdate(
       conditions.push(`EXISTS (SELECT 1 FROM person_tags pt WHERE pt.person_id = p.id AND pt.tag_id = $${paramIndex})`);
       queryParams.push(filterParams.tagId);
       paramIndex++;
+    }
+
+    const assignedUserFilter = filterParams.assignedUserId ?? filterParams.assigned_user_id;
+    if (assignedUserFilter && assignedUserFilter !== "ALL") {
+      if (assignedUserFilter === "__UNASSIGNED__") {
+        conditions.push(`p.assigned_user_id IS NULL`);
+      } else {
+        conditions.push(`p.assigned_user_id = $${paramIndex}`);
+        queryParams.push(assignedUserFilter);
+        paramIndex++;
+      }
     }
 
     if (filterParams.hasRequests === 'true' || filterParams.hasRequests === true) {
@@ -866,9 +827,10 @@ export async function personsBulkUpdate(
                  ELSE p2.status_day_d
                END,
                updated_at = NOW()
-           WHERE p2.citizen_id IN (SELECT citizen_id FROM target_citizens)
-             AND p2.deleted_at IS NULL
-        `;
+            WHERE p2.citizen_id IN (SELECT citizen_id FROM target_citizens)
+              AND ${campaignHierarchyScope(1, "p2")}
+              AND p2.deleted_at IS NULL
+         `;
         await client.query(sql, [...baseParams, voted]);
     }
 

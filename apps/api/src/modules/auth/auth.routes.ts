@@ -10,12 +10,11 @@ export async function authRoutes(app: FastifyInstance) {
   // Login normal
   app.post("/login", async (req, reply) => {
     const body = z.object({
-      campaignId: z.string().uuid(),
       email: z.string().email(),
       password: z.string().min(6),
     }).parse(req.body);
 
-    const user = await login(body.email, body.password, body.campaignId);
+    const user = await login(body.email, body.password);
     const token = app.jwt.sign(user);
 
     return reply.send({ token, user });

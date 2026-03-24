@@ -93,7 +93,7 @@ export async function stationsRoutes(app: FastifyInstance) {
     return getStationDashboard(req.user.campaignId, params.id, query.page, query.limit, query.search);
   });
 
-  app.post("/:id/collaborators", { preHandler: [app.requireAuth] }, async (req: any) => {
+  app.post("/:id/collaborators", { preHandler: [app.requireAuth, requireRole(["ADMIN"])] }, async (req: any) => {
     const params = z.object({ id: z.string().uuid() }).parse(req.params);
     const body = z.object({
         personId: z.string().uuid().optional().nullable(),
@@ -117,7 +117,7 @@ export async function stationsRoutes(app: FastifyInstance) {
     );
   });
 
-  app.delete("/:id/collaborators/:personId", { preHandler: [app.requireAuth] }, async (req: any) => {
+  app.delete("/:id/collaborators/:personId", { preHandler: [app.requireAuth, requireRole(["ADMIN"])] }, async (req: any) => {
     const params = z.object({ id: z.string().uuid(), personId: z.string().uuid() }).parse(req.params);
     return removeCollaborator(req.user.campaignId, params.id, params.personId);
   });

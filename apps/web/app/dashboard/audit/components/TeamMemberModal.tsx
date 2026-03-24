@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { Search, Loader2, UserPlus, X, AlertCircle, CheckCircle } from "lucide-react";
+import { getApiErrorMessage } from "../../../../lib/api-error";
+import { toast } from "sonner";
 
 interface TeamMemberModalProps {
   isOpen: boolean;
@@ -95,7 +97,7 @@ export default function TeamMemberModal({ isOpen, onClose, onConfirm }: TeamMemb
       handleClose();
     } catch (e) {
       console.error(e);
-      alert("Error al guardar colaborador");
+      toast.error(getApiErrorMessage(e, "Error al guardar colaborador"));
     } finally {
       setSubmitting(false);
     }

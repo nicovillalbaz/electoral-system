@@ -24,28 +24,6 @@ export async function eventsRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post("/report", { preHandler: [app.requireAuth] }, async (req: any) => {
-      const body = z.object({
-          type: z.string(),
-          description: z.string().optional(),
-          severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional().default('MEDIUM')
-      }).parse(req.body);
-  
-      await logEvent({
-          campaignId: req.user.campaignId,
-          eventType: 'INCIDENT_REPORT',
-          actorUserId: req.user.userId,
-          stationId: undefined, 
-          payload: {
-              subType: body.type,
-              description: body.description,
-              severity: body.severity
-          }
-      });
-  
-      return { success: true };
-    });
-
   app.post("/:id/revert", { preHandler: [app.requireAuth, requireRole(["ADMIN","COORDINATOR"])] }, async (req: any) => {
     const p = z.object({ id: z.string().uuid() }).parse(req.params);
     const ev = await getEventById(req.user.campaignId, p.id);

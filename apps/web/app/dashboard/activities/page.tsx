@@ -25,8 +25,10 @@ import {
 } from "date-fns";
 import { es } from "date-fns/locale";
 import api from "../../../lib/api";
+import { getApiErrorMessage } from "../../../lib/api-error";
 import clsx from "clsx";
 import { useDebounce } from "use-debounce";
+import { toast } from "sonner";
 import TaskModal from "./components/TaskModal";
 import FinancialClosingModal from "./components/FinancialClosingModal";
 
@@ -131,7 +133,7 @@ export default function ActivitiesPage() {
     try {
       await api.patch(`/tasks/${taskId}`, { completed: !currentStatus });
     } catch (e) {
-      alert("Error al actualizar tarea");
+      toast.error(getApiErrorMessage(e, "Error al actualizar tarea"));
       fetchTasks(); // Revert
     }
   };
@@ -242,8 +244,9 @@ export default function ActivitiesPage() {
       try {
           await api.delete(`/tasks/${task.id}`);
           setTasks(prev => prev.filter(t => t.id !== task.id));
+          toast.success("Actividad eliminada.");
       } catch(e) {
-          alert("Error al eliminar");
+          toast.error(getApiErrorMessage(e, "Error al eliminar"));
       }
   };
 

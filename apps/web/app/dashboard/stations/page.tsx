@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import api from '../../../lib/api';
+import { getApiErrorMessage } from '../../../lib/api-error';
+import { toast } from 'sonner';
 import { Pencil, Plus, Activity, Users, CheckCircle } from 'lucide-react';
 import { useDebounce } from 'use-debounce';
 
@@ -13,6 +15,7 @@ export default function StationsPage() {
   const [newStation, setNewStation] = useState<{ id?: string, name: string, managerUserId?: string }>({ name: '' });
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<any[]>([]); // <--- Users List
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Drill down view
   const [selectedStation, setSelectedStation] = useState<any | null>(null);
@@ -38,16 +41,24 @@ export default function StationsPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
         if (newStation.id) {
             await api.patch(`/stations/${newStation.id}`, newStation);
+            toast.success("Puesto actualizado exitosamente.");
         } else {
             await api.post('/stations', newStation);
+            toast.success("Puesto creado exitosamente.");
         }
         setShowModal(false);
         setNewStation({ name: '' });
-        loadStations();
-    } catch(e) { alert("Error al guardar"); }
+        await loadStations();
+    } catch(e) {
+      toast.error(getApiErrorMessage(e, "Error al guardar"));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const openEdit = (e: React.MouseEvent, station: any) => {
@@ -133,18 +144,33 @@ export default function StationsPage() {
                 className="w-full bg-black border border-zinc-700 rounded p-3 text-white mb-4 focus:border-white outline-none"
                 placeholder="Ej: Colegio Nacional..."
                 value={newStation.name} onChange={e => setNewStation({...newStation, name: e.target.value})} required 
+                disabled={isSubmitting}
               />
               <label className="block text-xs font-bold text-zinc-400 mb-1">JEFE DE PC (RESPONSABLE)</label>
               <select 
                 className="w-full bg-black border border-zinc-700 rounded p-3 text-white mb-4 focus:border-white outline-none"
                 value={newStation.managerUserId || ""} onChange={e => setNewStation({...newStation, managerUserId: e.target.value})}
+                disabled={isSubmitting}
               >
                   <option value="">-- Sin asignar --</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>)}
               </select>
 
-              <button type="submit" className="w-full bg-white text-black py-3 rounded font-black hover:bg-zinc-200">GUARDAR</button>
-              <button type="button" onClick={() => setShowModal(false)} className="w-full mt-2 py-2 text-zinc-500 font-bold text-sm">CANCELAR</button>
+              <button
+                type="submit"
+                className="w-full bg-white text-black py-3 rounded font-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "GUARDANDO..." : "GUARDAR"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="w-full mt-2 py-2 text-zinc-500 font-bold text-sm disabled:opacity-50"
+                disabled={isSubmitting}
+              >
+                CANCELAR
+              </button>
             </form>
           </div>
         </div>

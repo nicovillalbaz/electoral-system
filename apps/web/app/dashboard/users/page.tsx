@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import api from '../../../lib/api';
+import { getApiErrorMessage } from '../../../lib/api-error';
+import { toast } from 'sonner';
 import { UserCog, Shield, Plus, X, Lock } from 'lucide-react';
 
 export default function UsersPage() {
@@ -9,6 +11,7 @@ export default function UsersPage() {
   const [showModal, setShowModal] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Stations for assignment
   const [stations, setStations] = useState<any[]>([]);
@@ -49,6 +52,8 @@ export default function UsersPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       if (editMode && selectedUser) {
           // UPDATE
@@ -61,6 +66,7 @@ export default function UsersPage() {
           if (formData.password) payload.password = formData.password; // Only send if changed
 
           await api.patch(`/users/${selectedUser.id}`, payload);
+          toast.success("Usuario actualizado exitosamente.");
       } else {
           // CREATE
           const payload: any = {
@@ -71,13 +77,16 @@ export default function UsersPage() {
             operationalRole: formData.operationalRole,
           };
           await api.post('/users', payload);
+          toast.success("Usuario creado exitosamente.");
       }
       
       setShowModal(false);
-      loadUsers();
+      await loadUsers();
       resetForm();
-    } catch (error) {
-      alert("Error guardando usuario");
+    } catch (error: any) {
+      toast.error(getApiErrorMessage(error, "Error guardando usuario"));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -172,7 +181,13 @@ export default function UsersPage() {
           <div className="bg-zinc-900 border border-zinc-700 w-full max-w-2xl rounded-xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-white">{editMode ? 'Editar Usuario' : 'Alta de Operador'}</h2>
-              <button onClick={() => setShowModal(false)} className="text-zinc-500 hover:text-white"><X /></button>
+              <button
+                onClick={() => setShowModal(false)}
+                className="text-zinc-500 hover:text-white disabled:opacity-50"
+                disabled={isSubmitting}
+              >
+                <X />
+              </button>
             </div>
             
             <form onSubmit={handleSave} className="space-y-4">
@@ -181,6 +196,7 @@ export default function UsersPage() {
                 <input 
                   className="w-full bg-black border border-zinc-700 rounded p-3 text-white focus:border-white outline-none" 
                   value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} required 
+                  disabled={isSubmitting}
                 />
               </div>
               <div>
@@ -188,7 +204,7 @@ export default function UsersPage() {
                 <input 
                   type="email" className="w-full bg-black border border-zinc-700 rounded p-3 text-white focus:border-white outline-none disabled:opacity-50" 
                   value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required 
-                  disabled={editMode} // Email cannot be changed usually
+                  disabled={editMode || isSubmitting} // Email cannot be changed usually
                 />
               </div>
               <div>
@@ -197,6 +213,7 @@ export default function UsersPage() {
                   type="password" className="w-full bg-black border border-zinc-700 rounded p-3 text-white focus:border-white outline-none" 
                   value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} 
                   required={!editMode}
+                  disabled={isSubmitting}
                 />
               </div>
               <div>
@@ -204,6 +221,7 @@ export default function UsersPage() {
                 <select 
                   className="w-full bg-black border border-zinc-700 rounded p-3 text-white focus:border-white outline-none"
                   value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}
+                  disabled={isSubmitting}
                 >
                   <option value="OPERATOR">OPERADOR (Móvil)</option>
                   <option value="STATION_MANAGER">JEFE DE PC</option>
@@ -219,6 +237,7 @@ export default function UsersPage() {
                 <select 
                   className="w-full bg-black border border-zinc-700 rounded p-3 text-white focus:border-white outline-none"
                   value={formData.operationalRole} onChange={e => setFormData({...formData, operationalRole: e.target.value})}
+                  disabled={isSubmitting}
                 >
                   <option value="JEFE_CAMPAÑA">JEFE DE CAMPAÑA</option>
                   <option value="COORDINADOR">COORDINADOR</option>
@@ -234,6 +253,7 @@ export default function UsersPage() {
                 <select 
                   className="w-full bg-black border border-zinc-700 rounded p-3 text-white focus:border-white outline-none"
                   value={formData.assignedStationId} onChange={e => setFormData({...formData, assignedStationId: e.target.value})}
+                  disabled={isSubmitting}
                 >
                   <option value="">-- SIN ASIGNAR --</option>
                   {stations.map(s => <option key={s.id} value={s.id}>{s.name} ({s.address || 'Sin dirección'})</option>)}
@@ -241,8 +261,21 @@ export default function UsersPage() {
               </div>
 
               <div className="pt-4 flex gap-3">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 font-bold text-zinc-400 hover:text-white">CANCELAR</button>
-                <button type="submit" className="flex-1 bg-white text-black py-3 rounded font-black hover:bg-zinc-200">{editMode ? 'GUARDAR' : 'CREAR'}</button>
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="flex-1 py-3 font-bold text-zinc-400 hover:text-white disabled:opacity-50"
+                  disabled={isSubmitting}
+                >
+                  CANCELAR
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-white text-black py-3 rounded font-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'GUARDANDO...' : editMode ? 'GUARDAR' : 'CREAR'}
+                </button>
               </div>
             </form>
           </div>

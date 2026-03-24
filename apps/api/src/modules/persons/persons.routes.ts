@@ -46,7 +46,7 @@ export async function personsRoutes(app: FastifyInstance) {
           return result;
       } catch (error: any) {
           req.log.error(error);
-          reply.code(500).send({ error: error.message });
+          throw error;
       }
   });
   app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
@@ -54,6 +54,9 @@ export async function personsRoutes(app: FastifyInstance) {
     const normalized: any = { ...raw };
     if (normalized.campaign_status && !normalized.campaignStatus) {
       normalized.campaignStatus = normalized.campaign_status;
+    }
+    if (normalized.assigned_user_id && !normalized.assignedUserId) {
+      normalized.assignedUserId = normalized.assigned_user_id;
     }
     if (normalized.hasVoted && !normalized.votedStatus) {
       if (normalized.hasVoted === "true" || normalized.hasVoted === true) {
@@ -79,6 +82,7 @@ export async function personsRoutes(app: FastifyInstance) {
         votedStatus: z.string().optional(),
         campaignStatus: z.string().optional(), 
         tagId: z.string().optional(),
+        assignedUserId: z.string().optional(),
         needsTransport: z.string().optional(),
         transportStatus: z.string().optional(),
         
@@ -91,10 +95,11 @@ export async function personsRoutes(app: FastifyInstance) {
 
     // 2. Ejecutamos la consulta limpia
     const campaignId = req.user.campaignId;
+    const limit = Math.min(queryZ.limit ?? 50, 200);
     const res = await personsList(campaignId, {
       q: queryZ.q,
       page: queryZ.page,
-      limit: queryZ.limit,
+      limit,
       sortBy: queryZ.sortBy,
       sortDir: queryZ.sortDir as "ASC" | "DESC",
       address: queryZ.address,
@@ -103,6 +108,7 @@ export async function personsRoutes(app: FastifyInstance) {
       votedStatus: queryZ.votedStatus,
       campaignStatus: queryZ.campaignStatus, 
       tagId: queryZ.tagId,
+      assignedUserId: queryZ.assignedUserId,
       needsTransport: queryZ.needsTransport,
       transportStatus: queryZ.transportStatus,
       hasRequests: queryZ.hasRequests,

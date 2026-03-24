@@ -87,7 +87,6 @@ CREATE TYPE public.event_type AS ENUM (
     'TAG_ASSIGNED',
     'USER_LOGIN',
     'TAG_REMOVED',
-    'INCIDENT_REPORT',
     'USER_PASSWORD_CHANGE',
     'ADMIN_RESET_PASSWORD'
 );
@@ -416,7 +415,8 @@ CREATE TABLE public.station_checkins (
     person_id uuid,
     vote_intent_snapshot text,
     notes text,
-    checkin_by_user_id uuid
+    checkin_by_user_id uuid,
+    date_bucket date DEFAULT CURRENT_DATE NOT NULL
 );
 
 
@@ -736,6 +736,15 @@ ALTER TABLE ONLY public.polling_tables
 
 ALTER TABLE ONLY public.station_checkins
     ADD CONSTRAINT station_checkins_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4999 (class 2606 OID 210001)
+-- Name: station_checkins station_checkins_campaign_station_person_date_bucket_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.station_checkins
+    ADD CONSTRAINT station_checkins_campaign_station_person_date_bucket_key UNIQUE (campaign_id, station_id, person_id, date_bucket);
 
 
 --

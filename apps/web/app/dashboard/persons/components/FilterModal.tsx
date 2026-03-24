@@ -1,23 +1,28 @@
 "use client";
 import { useState } from "react";
-import { X, MapPin, Target, CheckCircle, RotateCcw, Filter, Tag } from "lucide-react";
+import { X, MapPin, Target, CheckCircle, RotateCcw, Filter, Tag, User } from "lucide-react";
 
 interface FilterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onApply: (filters: any) => void; 
+  onApply: (filters: any) => void | Promise<void>; 
   availableAddresses: string[];
   availableTags: any[];
+  availableUsers: any[];
   initialValues?: any;
+  isSubmitting?: boolean;
 }
 
-export default function FilterModal({ isOpen, onClose, onApply, availableAddresses, availableTags, initialValues }: FilterModalProps) {
+export default function FilterModal({ isOpen, onClose, onApply, availableAddresses, availableTags, availableUsers, initialValues, isSubmitting = false }: FilterModalProps) {
+  const [internalApplying, setInternalApplying] = useState(false);
+  const applying = isSubmitting || internalApplying;
   
   const [filters, setFilters] = useState({
     address: initialValues?.address || "",          
     party: initialValues?.party || "TODOS",       
     voteIntent: initialValues?.voteIntent || "ALL",    
     tagId: initialValues?.tagId || "",            
+    assignedUserId: initialValues?.assignedUserId || initialValues?.assigned_user_id || "",
     votedStatus: initialValues?.votedStatus || "ALL",
     campaignStatus: initialValues?.campaignStatus || initialValues?.campaign_status || "ALL",
     needsTransport: initialValues?.needsTransport || "ALL",
@@ -27,9 +32,17 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
     financialNeedsFulfilled: initialValues?.financialNeedsFulfilled || "ALL"
   });
 
-  const handleApply = () => {
-    onApply(filters);
-    onClose();
+  const handleApply = async () => {
+    if (applying) return;
+    setInternalApplying(true);
+    try {
+      await Promise.resolve(onApply(filters));
+      onClose();
+    } catch (_error) {
+      // The caller already handles error feedback.
+    } finally {
+      setInternalApplying(false);
+    }
   };
 
   const handleReset = () => {
@@ -38,6 +51,7 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
       party: "TODOS",
       voteIntent: "ALL",
       tagId: "",
+      assignedUserId: "",
       votedStatus: "ALL",
       campaignStatus: "ALL",
       needsTransport: "ALL",
@@ -59,7 +73,7 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     <Filter size={20} className="text-zinc-400"/> Filtros de Campaña
                 </h2>
-                <button onClick={onClose} className="text-zinc-500 hover:text-white bg-zinc-900 p-2 rounded-full hover:bg-zinc-800 transition-colors">
+                <button onClick={onClose} className="text-zinc-500 hover:text-white bg-zinc-900 p-2 rounded-full hover:bg-zinc-800 transition-colors disabled:opacity-50" disabled={applying}>
                     <X size={18} />
                 </button>
             </div>
@@ -177,6 +191,30 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
                         </div>
                     </div>
 
+                    <div>
+                        <label className="block text-[10px] font-bold text-zinc-500 mb-1">PUNTERO / RESPONSABLE</label>
+                        <div className="relative">
+                            <User className="absolute left-3 top-2.5 text-zinc-600" size={14} />
+                            <select
+                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg pl-9 p-2.5 text-sm text-white focus:border-emerald-500 outline-none appearance-none"
+                                value={filters.assignedUserId}
+                                onChange={(e) => setFilters({ ...filters, assignedUserId: e.target.value })}
+                            >
+                                <option value="">Todos los responsables</option>
+                                <option value="__UNASSIGNED__">Sin responsable asignado</option>
+                                {availableUsers.length > 0 ? (
+                                    availableUsers.map((user) => (
+                                        <option key={user.id} value={user.id}>
+                                            {user.full_name || user.name || user.email || user.id}
+                                        </option>
+                                    ))
+                                ) : (
+                                    <option value="" disabled>Sin usuarios disponibles</option>
+                                )}
+                            </select>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-[10px] font-bold text-zinc-500 mb-1">NECESITA TRANSPORTE</label>
@@ -289,15 +327,17 @@ export default function FilterModal({ isOpen, onClose, onApply, availableAddress
             <div className="p-5 border-t border-zinc-800 bg-zinc-900/50 rounded-b-2xl flex gap-3">
                 <button 
                     onClick={handleReset}
-                    className="px-4 py-2 rounded-lg font-bold text-xs text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-2"
+                    className="px-4 py-2 rounded-lg font-bold text-xs text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-2 disabled:opacity-50"
+                    disabled={applying}
                 >
                     <RotateCcw size={14}/> Limpiar
                 </button>
                 <button 
                     onClick={handleApply} 
-                    className="flex-1 bg-white text-black py-2 rounded-lg font-black hover:bg-zinc-200 transition-colors text-sm"
+                    className="flex-1 bg-white text-black py-2 rounded-lg font-black hover:bg-zinc-200 transition-colors text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={applying}
                 >
-                    APLICAR FILTROS
+                    {applying ? "APLICANDO..." : "APLICAR FILTROS"}
                 </button>
             </div>
         </div>

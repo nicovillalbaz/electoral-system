@@ -274,25 +274,27 @@ export async function checkInToStation(campaignId: string, stationId: string, pe
     const citizenId = personRes.rows[0].citizen_id as string;
     
     const res = await query(
-        `INSERT INTO station_checkins (campaign_id, station_id, person_id, checkin_by_user_id, checkin_at)
-         VALUES ($1, $2, $3, $4, NOW())
-         ON CONFLICT DO NOTHING
+        `INSERT INTO station_checkins (campaign_id, station_id, person_id, checkin_by_user_id, checkin_at, date_bucket)
+         VALUES ($1, $2, $3, $4, NOW(), CURRENT_DATE)
+         ON CONFLICT (campaign_id, station_id, person_id, date_bucket)
+         DO UPDATE SET checkin_by_user_id = COALESCE(EXCLUDED.checkin_by_user_id, station_checkins.checkin_by_user_id)
          RETURNING id`,
         [campaignId, stationId, personId, userId]
     );
 
     // Sync Day-D status globally for this citizen across sibling campaigns.
     await query(
-        `UPDATE persons 
+        `UPDATE persons p
          SET status_day_d = CASE
-               WHEN has_voted THEN 'VOTED'::day_d_status_enum
-               ELSE 'CHECKED_IN'::day_d_status_enum
-             END,
-             station_checkin_at = NOW(),
-             updated_at = NOW()
-         WHERE citizen_id = $1
-           AND deleted_at IS NULL`,
-        [citizenId]
+                WHEN has_voted THEN 'VOTED'::day_d_status_enum
+                ELSE 'CHECKED_IN'::day_d_status_enum
+              END,
+              station_checkin_at = NOW(),
+              updated_at = NOW()
+         WHERE p.citizen_id = $1
+           AND ${campaignHierarchyScope("p", 2)}
+           AND p.deleted_at IS NULL`,
+        [citizenId, campaignId]
     );
     return { success: (res.rowCount ?? 0) > 0 };
 }

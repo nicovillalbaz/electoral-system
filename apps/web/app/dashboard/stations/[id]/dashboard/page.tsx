@@ -5,7 +5,9 @@ import { useParams } from "next/navigation";
 import useSWR from "swr"; // Assuming SWR is used or React Query. Checking imports.
 // Fallback to fetch or safeApi if no SWR.
 import safeApi from "../../../../../lib/api"; 
+import { getApiErrorMessage } from "../../../../../lib/api-error";
 import { Users, Truck, AlertTriangle, CheckCircle, Search, Plus, Trash2, Fuel, Sandwich, Bus } from "lucide-react";
+import { toast } from "sonner";
 
 import TeamMemberModal from "../../../audit/components/TeamMemberModal"; // Fixed path
 
@@ -66,10 +68,11 @@ export default function StationDashboardPage() {
     const handleAddCollaborator = async (personId: string | null, role: string, citizenData?: any) => {
         try {
             await safeApi.post(`/stations/${stationId}/collaborators`, { personId, role, ...citizenData });
-            fetchData(); // Refresh
+            await fetchData(); // Refresh
             setIsAddingCollab(false);
+            toast.success("Colaborador agregado.");
         } catch (e) {
-            alert("Error adding collaborator");
+            toast.error(getApiErrorMessage(e, "Error adding collaborator"));
         }
     };
 
@@ -77,9 +80,10 @@ export default function StationDashboardPage() {
         if (!confirm("Remove staff?")) return;
         try {
             await safeApi.delete(`/stations/${stationId}/collaborators/${personId}`);
-            fetchData();
+            await fetchData();
+            toast.success("Colaborador removido.");
         } catch (e) {
-            alert("Error removing");
+            toast.error(getApiErrorMessage(e, "Error removing"));
         }
     };
 

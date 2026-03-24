@@ -8,8 +8,15 @@ export async function listsRoutes(app: FastifyInstance) {
   
   // GET TODAS
   app.get("/", { preHandler: [app.requireAuth] }, async (req: any) => {
-    const { q } = z.object({ q: z.string().optional() }).parse(req.query);
-    return listsGetAll(req.user.campaignId, q);
+    const { q, page, limit } = z.object({
+      q: z.string().optional(),
+      page: z.coerce.number().min(1).default(1),
+      limit: z.coerce.number().min(1).default(50),
+    }).parse(req.query);
+
+    const boundedLimit = Math.min(limit, 200);
+    const offset = (page - 1) * boundedLimit;
+    return listsGetAll(req.user.campaignId, q, boundedLimit, offset);
   });
 
   // POST CREAR
@@ -50,13 +57,16 @@ export async function listsRoutes(app: FastifyInstance) {
     
     // Paginación y Filtros (JSON stringified)
     const querySchema = z.object({
-        page: z.coerce.number().default(1),
-        limit: z.coerce.number().default(50),
+        page: z.coerce.number().min(1).default(1),
+        limit: z.coerce.number().min(1).default(50),
         q: z.string().optional(),
-        filters: z.string().optional() // Recibimos JSON string
+        filters: z.string().optional(), // Recibimos JSON string
+        sortBy: z.string().optional(),
+        sortDir: z.enum(["ASC", "DESC"]).optional()
     });
-    const { page, limit, q, filters } = querySchema.parse(req.query);
-    const offset = (page - 1) * limit;
+    const { page, limit, q, filters, sortBy, sortDir } = querySchema.parse(req.query);
+    const boundedLimit = Math.min(limit, 200);
+    const offset = (page - 1) * boundedLimit;
 
     let filterOverride = undefined;
     if (filters) {
@@ -67,7 +77,16 @@ export async function listsRoutes(app: FastifyInstance) {
         }
     }
 
-    const result = await listGetMembers(req.user.campaignId, id, limit, offset, filterOverride, q);
+    const result = await listGetMembers(
+      req.user.campaignId,
+      id,
+      boundedLimit,
+      offset,
+      filterOverride,
+      q,
+      sortBy,
+      sortDir
+    );
     
     if (!result) throw notFound("Lista no encontrada");
     

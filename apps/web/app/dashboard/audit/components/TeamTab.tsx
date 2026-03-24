@@ -4,6 +4,8 @@ import { Trash2 } from "lucide-react";
 import { ROLE_ICONS, ROLE_COLORS } from "../../components/teamRoleStyles";
 import { useState } from "react";
 import TeamMemberModal from "./TeamMemberModal";
+import { getApiErrorMessage } from "../../../../lib/api-error";
+import { toast } from "sonner";
 
 interface TeamTabProps {
   stationId: string;
@@ -24,8 +26,10 @@ export default function TeamTab({ stationId, collaborators, users = [], onRefres
     });
     if (res.ok) {
       onRefresh();
+      toast.success("Colaborador agregado.");
     } else {
-        alert("Error al agregar colaborador");
+      const err = await res.json().catch(() => ({}));
+      toast.error(err?.error || err?.message || "Error al agregar colaborador");
     }
   };
 
@@ -39,9 +43,14 @@ export default function TeamTab({ stationId, collaborators, users = [], onRefres
         });
         if (res.ok) {
             onRefresh();
+            toast.success("Colaborador removido.");
+        } else {
+            const err = await res.json().catch(() => ({}));
+            toast.error(err?.error || err?.message || "Error al remover colaborador");
         }
     } catch(e) {
         console.error(e);
+        toast.error(getApiErrorMessage(e, "Error al remover colaborador"));
     } finally {
         setDeletingId(null);
     }
