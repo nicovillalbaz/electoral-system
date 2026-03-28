@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useDebounce } from "use-debounce";
 import {
@@ -21,6 +21,7 @@ import {
 import api from "../../../../lib/api";
 import { getApiErrorMessage } from "../../../../lib/api-error";
 import { toast } from "sonner";
+import MonetaryAmountSelector from "../../components/MonetaryAmountSelector";
 import PersonModal from "../../persons/components/PersonModal";
 import FilterModal from "../../persons/components/FilterModal";
 import BulkUpdateModal from "../../persons/components/BulkUpdateModal";
@@ -130,6 +131,114 @@ const sortableColumns: Partial<Record<SmartListColumnKey, string>> = {
 
 const columnStoragePrefix = "smart-list-columns:";
 
+const editableColumns: SmartListColumnKey[] = [
+  "order",
+  "table",
+  "address",
+  "exactAddress",
+  "phone",
+  "whatsapp",
+  "party",
+  "intent",
+  "campaign",
+  "transport",
+  "transportStatus",
+  "financial",
+  "financialAmount",
+  "assignedStation",
+  "assignedUser",
+  "notes",
+];
+
+const voteIntentOptions = [
+  { value: "SURE", label: "Voto seguro" },
+  { value: "PROBABLE", label: "Probable" },
+  { value: "UNDECIDED", label: "Indeciso" },
+  { value: "OPPOSITION_INTERNAL", label: "Oposicion (interna)" },
+  { value: "OPPOSITION_PARTY", label: "Oposicion (otro partido)" },
+  { value: "WONT_VOTE", label: "No vota" },
+] as const;
+
+const campaignStatusOptions = [
+  { value: "NOT_VISITED", label: "No visitado" },
+  { value: "TO_VISIT", label: "Por visitar" },
+  { value: "CONTACTED", label: "Contactado" },
+  { value: "VISITED", label: "Visitado" },
+  { value: "VISITED_PC", label: "Paso por PC" },
+  { value: "DO_NOT_DISTURB", label: "No molestar" },
+] as const;
+
+const partyAffiliationOptions = [
+  { value: "", label: "Sin definir" },
+  { value: "ANR", label: "ANR" },
+  { value: "PLRA", label: "PLRA" },
+  { value: "INDEPENDIENTE", label: "INDEPENDIENTE" },
+  { value: "OTRO", label: "OTRO" },
+  { value: "SIN_AFILIACION", label: "SIN AFILIACION" },
+] as const;
+
+const transportStatusOptions = [
+  { value: "PENDING", label: "Pendiente" },
+  { value: "ASSIGNED", label: "Asignado" },
+  { value: "COMPLETED", label: "Completado" },
+] as const;
+
+type InlineEditDraft = {
+  address: string;
+  exactAddress: string;
+  phoneNumber: string;
+  whatsappNumber: string;
+  tableNumber: string;
+  orderNumber: string;
+  partyAffiliation: string;
+  currentVoteIntent: string;
+  campaignStatus: string;
+  needsTransport: boolean;
+  transportStatus: string;
+  hasFinancialNeeds: boolean;
+  financialAmount: string;
+  assignedStationId: string;
+  assignedUserId: string;
+  notes: string;
+};
+
+const parseNullableNumber = (value: string) => {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  const parsed = Number(trimmed);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const parseNonNegativeNumber = (value: string) => {
+  const trimmed = value.trim();
+  if (trimmed === "") return 0;
+  const parsed = Number(trimmed);
+  if (Number.isNaN(parsed) || parsed < 0) return null;
+  return parsed;
+};
+
+const createInlineEditDraft = (person: any): InlineEditDraft => ({
+  address: person.address || "",
+  exactAddress: person.exact_address || "",
+  phoneNumber: person.phone_number || "",
+  whatsappNumber: person.whatsapp_number || "",
+  tableNumber: person.voting_table_number?.toString() || "",
+  orderNumber: person.voting_order_number?.toString() || "",
+  partyAffiliation: person.party_affiliation || "",
+  currentVoteIntent: person.current_vote_intent || "UNDECIDED",
+  campaignStatus: person.campaign_status || "NOT_VISITED",
+  needsTransport: !!person.needs_transport,
+  transportStatus: person.transport_status || "PENDING",
+  hasFinancialNeeds: !!person.has_financial_needs,
+  financialAmount:
+    person.financial_amount !== null && person.financial_amount !== undefined
+      ? String(Number(person.financial_amount))
+      : "",
+  assignedStationId: person.assigned_station_id || "",
+  assignedUserId: person.assigned_user_id || "",
+  notes: person.notes || "",
+});
+
 const formatDate = (value?: string) => {
   if (!value) return "-";
   const date = new Date(value);
@@ -176,6 +285,9 @@ export default function SmartListPage() {
   const [sorting, setSorting] = useState<{ field: string; dir: SortDirection } | null>(null);
 
   const [columns, setColumns] = useState<SmartListColumns>(createDefaultColumns);
+  const [inlineEditPersonId, setInlineEditPersonId] = useState<string | null>(null);
+  const [inlineDraft, setInlineDraft] = useState<InlineEditDraft | null>(null);
+  const [savingInlineId, setSavingInlineId] = useState<string | null>(null);
 
   const [availableAddresses, setAvailableAddresses] = useState<string[]>([]);
   const [availableTags, setAvailableTags] = useState<any[]>([]);
@@ -215,6 +327,11 @@ export default function SmartListPage() {
     if (!status || status === "NOT_VISITED") return "SIN VISITAR";
     return status;
   };
+
+  const hasVisibleEditableColumns = useMemo(
+    () => editableColumns.some((column) => columns[column]),
+    [columns]
+  );
 
   useEffect(() => {
     if (!listId) return;
@@ -335,6 +452,81 @@ export default function SmartListPage() {
     }
   };
 
+  const openInlineEditor = (person: any) => {
+    if (!hasVisibleEditableColumns) {
+      toast.info("Activa al menos una columna editable desde Vistas para usar la edicion rapida.");
+      return;
+    }
+
+    setInlineEditPersonId(person.id);
+    setInlineDraft(createInlineEditDraft(person));
+  };
+
+  const cancelInlineEditor = () => {
+    setInlineEditPersonId(null);
+    setInlineDraft(null);
+    setSavingInlineId(null);
+  };
+
+  const updateInlineDraft = (patch: Partial<InlineEditDraft>) => {
+    setInlineDraft((prev) => (prev ? { ...prev, ...patch } : prev));
+  };
+
+  const saveInlineEditor = async (person: any) => {
+    if (!inlineDraft || savingInlineId) return;
+
+    if (person.financial_needs_fulfilled && !inlineDraft.hasFinancialNeeds) {
+      toast.error("No se puede quitar un aporte ya entregado.");
+      return;
+    }
+
+    const nextFinancialAmount = parseNonNegativeNumber(inlineDraft.financialAmount);
+    if (nextFinancialAmount === null) {
+      toast.error("El monto del aporte no es valido.");
+      return;
+    }
+
+    const payload: any = {};
+
+    if (inlineDraft.address !== (person.address || "")) payload.address = inlineDraft.address;
+    if (inlineDraft.exactAddress !== (person.exact_address || "")) payload.exactAddress = inlineDraft.exactAddress;
+    if (inlineDraft.phoneNumber !== (person.phone_number || "")) payload.phoneNumber = inlineDraft.phoneNumber;
+    if (inlineDraft.whatsappNumber !== (person.whatsapp_number || "")) payload.whatsappNumber = inlineDraft.whatsappNumber;
+    if (inlineDraft.partyAffiliation !== (person.party_affiliation || "")) payload.partyAffiliation = inlineDraft.partyAffiliation;
+    if (inlineDraft.currentVoteIntent !== (person.current_vote_intent || "UNDECIDED")) payload.currentVoteIntent = inlineDraft.currentVoteIntent;
+    if (inlineDraft.campaignStatus !== (person.campaign_status || "NOT_VISITED")) payload.campaignStatus = inlineDraft.campaignStatus;
+    if (inlineDraft.notes !== (person.notes || "")) payload.notes = inlineDraft.notes;
+    if (inlineDraft.needsTransport !== !!person.needs_transport) payload.needsTransport = inlineDraft.needsTransport;
+    if (inlineDraft.transportStatus !== (person.transport_status || "PENDING")) payload.transportStatus = inlineDraft.transportStatus;
+    if (inlineDraft.hasFinancialNeeds !== !!person.has_financial_needs) payload.hasFinancialNeeds = inlineDraft.hasFinancialNeeds;
+    if (nextFinancialAmount !== Number(person.financial_amount ?? 0)) payload.financialAmount = nextFinancialAmount;
+    if (inlineDraft.assignedStationId !== (person.assigned_station_id || "")) payload.assignedStationId = inlineDraft.assignedStationId;
+    if (inlineDraft.assignedUserId !== (person.assigned_user_id || "")) payload.assignedUserId = inlineDraft.assignedUserId;
+
+    const nextTableNumber = parseNullableNumber(inlineDraft.tableNumber);
+    if (nextTableNumber !== (person.voting_table_number ?? null)) payload.tableNumber = nextTableNumber;
+
+    const nextOrderNumber = parseNullableNumber(inlineDraft.orderNumber);
+    if (nextOrderNumber !== (person.voting_order_number ?? null)) payload.orderNumber = nextOrderNumber;
+
+    if (Object.keys(payload).length === 0) {
+      toast.info("No hay cambios para guardar.");
+      cancelInlineEditor();
+      return;
+    }
+
+    setSavingInlineId(person.id);
+    try {
+      await api.patch(`/persons/${person.id}`, payload);
+      await fetchListMembers();
+      toast.success("Persona actualizada desde la lista.");
+      cancelInlineEditor();
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "Error guardando los cambios rapidos"));
+      setSavingInlineId(null);
+    }
+  };
+
   const toggleColumn = (column: keyof SmartListColumns) => {
     const visibleCount = Object.values(columns).filter(Boolean).length;
     if (columns[column] && visibleCount === 1) return;
@@ -375,6 +567,23 @@ export default function SmartListPage() {
           {sortable ? <SortIcon column={column} /> : null}
         </span>
       </th>
+    );
+  };
+
+  const renderInlineField = (
+    show: boolean,
+    label: string,
+    content: ReactNode,
+    extraClassName = ""
+  ) => {
+    if (!show) return null;
+    return (
+      <div className={`space-y-1 ${extraClassName}`}>
+        <label className="block text-[10px] font-black uppercase tracking-wide text-zinc-500">
+          {label}
+        </label>
+        {content}
+      </div>
     );
   };
 
@@ -450,6 +659,9 @@ export default function SmartListPage() {
                 <div className="fixed inset-0 z-10" onClick={() => setShowColumnMenu(false)}></div>
                 <div className="absolute right-0 top-12 bg-zinc-900 border border-zinc-700 p-3 rounded-xl shadow-xl z-20 w-56 max-h-96 overflow-y-auto space-y-2">
                   <p className="text-xs font-bold text-zinc-500 uppercase mb-2">Mostrar Columnas</p>
+                  <p className="text-[11px] leading-4 text-zinc-500">
+                    Las columnas visibles tambien aparecen en la edicion rapida de cada fila.
+                  </p>
                   {(Object.keys(columns) as Array<keyof SmartListColumns>).map((columnKey) => (
                     <label
                       key={columnKey}
@@ -556,127 +768,409 @@ export default function SmartListPage() {
                   </tr>
                 ))
               ) : members.length > 0 ? (
-                members.map((p) => (
-                  <tr key={p.id} className="hover:bg-zinc-800/40 transition-colors group">
-                    {columns.document && <td className="p-4 font-mono text-white">{p.document_id}</td>}
-                    {columns.name && <td className="p-4 font-bold text-zinc-200">{p.last_name}, {p.first_name}</td>}
-                    {columns.order && <td className="p-4 text-center font-mono text-zinc-500 bg-black/20">{p.voting_order_number ?? "-"}</td>}
-                    {columns.table && <td className="p-4 text-center font-mono text-zinc-500">{p.voting_table_number ?? "-"}</td>}
-                    {columns.place && <td className="p-4 text-xs text-zinc-300">{p.location_place || "-"}</td>}
-                    {columns.district && <td className="p-4 text-xs text-zinc-300">{p.location_district || "-"}</td>}
-                    {columns.department && <td className="p-4 text-xs text-zinc-300">{p.location_department || "-"}</td>}
-                    {columns.address && (
-                      <td className="p-4">
-                        <div className="flex items-center gap-2" title={p.address}>
-                          <MapPin size={14} className="text-zinc-600" />
-                          <span className="truncate max-w-[150px]">{p.address || "-"}</span>
-                        </div>
-                      </td>
-                    )}
-                    {columns.exactAddress && (
-                      <td className="p-4">
-                        <div className="max-w-[220px] truncate text-xs" title={p.exact_address}>
-                          {p.exact_address || "-"}
-                        </div>
-                      </td>
-                    )}
-                    {columns.phone && <td className="p-4 text-xs font-mono text-zinc-400">{p.phone_number || "-"}</td>}
-                    {columns.whatsapp && <td className="p-4 text-xs font-mono text-zinc-400">{p.whatsapp_number || "-"}</td>}
-                    {columns.party && (
-                      <td className="p-4">
-                        <span className={`text-xs flex items-center gap-1 ${getPartyColor(p.party_affiliation)}`}>
-                          {p.party_affiliation ? <Flag size={12} fill="currentColor" /> : null}
-                          {p.party_affiliation || "-"}
-                        </span>
-                      </td>
-                    )}
-                    {columns.affiliationDate && <td className="p-4 text-xs">{formatDate(p.party_affiliation_date)}</td>}
-                    {columns.birthdate && <td className="p-4 text-xs">{formatDate(p.birthdate)}</td>}
-                    {columns.sex && <td className="p-4 text-xs">{p.sex || "-"}</td>}
-                    {columns.intent && (
-                      <td className="p-4">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.current_vote_intent === "SURE" ? "bg-emerald-900 text-emerald-300" : "bg-zinc-800"}`}>
-                          {p.current_vote_intent || "-"}
-                        </span>
-                      </td>
-                    )}
-                    {columns.status && (
-                      <td className="p-4">
-                        {p.has_voted ? (
-                          <span className="text-emerald-500 font-bold text-xs">VOTO</span>
-                        ) : (
-                          <span className="text-zinc-600 text-xs">Pendiente</span>
+                members.map((p) => {
+                  const isEditingRow = inlineEditPersonId === p.id && !!inlineDraft;
+                  return (
+                    <Fragment key={p.id}>
+                      <tr className={`hover:bg-zinc-800/40 transition-colors group ${isEditingRow ? "bg-zinc-800/30" : ""}`}>
+                        {columns.document && <td className="p-4 font-mono text-white">{p.document_id}</td>}
+                        {columns.name && <td className="p-4 font-bold text-zinc-200">{p.last_name}, {p.first_name}</td>}
+                        {columns.order && <td className="p-4 text-center font-mono text-zinc-500 bg-black/20">{p.voting_order_number ?? "-"}</td>}
+                        {columns.table && <td className="p-4 text-center font-mono text-zinc-500">{p.voting_table_number ?? "-"}</td>}
+                        {columns.place && <td className="p-4 text-xs text-zinc-300">{p.location_place || "-"}</td>}
+                        {columns.district && <td className="p-4 text-xs text-zinc-300">{p.location_district || "-"}</td>}
+                        {columns.department && <td className="p-4 text-xs text-zinc-300">{p.location_department || "-"}</td>}
+                        {columns.address && (
+                          <td className="p-4">
+                            <div className="flex items-center gap-2" title={p.address}>
+                              <MapPin size={14} className="text-zinc-600" />
+                              <span className="truncate max-w-[150px]">{p.address || "-"}</span>
+                            </div>
+                          </td>
                         )}
-                      </td>
-                    )}
-                    {columns.campaign && (
-                      <td className="p-4">
-                        <span
-                          className={`px-2 py-1 rounded text-[10px] font-black uppercase ${
-                            p.campaign_status === "VISITED"
-                              ? "bg-emerald-900/50 text-emerald-400 border border-emerald-900"
-                              : p.campaign_status === "CONTACTED"
-                                ? "bg-blue-900/50 text-blue-400 border border-blue-900"
-                                : p.campaign_status === "TO_VISIT"
-                                  ? "bg-amber-900/50 text-amber-400 border border-amber-900"
-                                  : "bg-zinc-800 text-zinc-500"
-                          }`}
-                        >
-                          {getCampaignStatusLabel(p.campaign_status)}
-                        </span>
-                      </td>
-                    )}
-                    {columns.isVisited && <td className="p-4 text-xs">{p.is_visited ? "Si" : "No"}</td>}
-                    {columns.transport && (
-                      <td className="p-4">
-                        {p.needs_transport ? (
-                          <span className="text-xs flex items-center gap-1 text-purple-400 font-bold">
-                            <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
-                            {p.transport_status || "PENDIENTE"}
-                          </span>
-                        ) : (
-                          <span className="text-zinc-700 text-xs">-</span>
+                        {columns.exactAddress && (
+                          <td className="p-4">
+                            <div className="max-w-[220px] truncate text-xs" title={p.exact_address}>
+                              {p.exact_address || "-"}
+                            </div>
+                          </td>
                         )}
-                      </td>
-                    )}
-                    {columns.transportStatus && <td className="p-4 text-xs">{p.transport_status || "-"}</td>}
-                    {columns.dayDStatus && <td className="p-4 text-xs">{p.status_day_d || "-"}</td>}
-                    {columns.checkin && <td className="p-4 text-xs">{formatDateTime(p.station_checkin_at)}</td>}
-                    {columns.requests && (
-                      <td className="p-4 text-center text-xs">
-                        <span className="bg-zinc-800 px-2 py-0.5 rounded">{getRequestsCount(p.requests)}</span>
-                      </td>
-                    )}
-                    {columns.financial && <td className="p-4 text-xs">{p.has_financial_needs ? "Si" : "No"}</td>}
-                    {columns.financialFulfilled && <td className="p-4 text-xs">{p.financial_needs_fulfilled ? "Si" : "No"}</td>}
-                    {columns.financialAmount && (
-                      <td className="p-4 text-right text-xs font-mono">
-                        {p.financial_amount !== null && p.financial_amount !== undefined
-                          ? Number(p.financial_amount).toLocaleString()
-                          : "-"}
-                      </td>
-                    )}
-                    {columns.assignedStation && <td className="p-4 text-xs">{getStationName(p.assigned_station_id)}</td>}
-                    {columns.assignedUser && <td className="p-4 text-xs">{getUserName(p.assigned_user_id)}</td>}
-                    {columns.notes && (
-                      <td className="p-4">
-                        <div className="max-w-[240px] truncate text-xs" title={p.notes}>
-                          {p.notes || "-"}
-                        </div>
-                      </td>
-                    )}
-                    {columns.actions && (
-                      <td className="p-4 text-right">
-                        <button
-                          onClick={() => setPersonToEdit(p)}
-                          className="p-2 hover:bg-zinc-700 rounded-full text-zinc-400 hover:text-white transition-colors"
-                        >
-                          <Edit size={16} />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))
+                        {columns.phone && <td className="p-4 text-xs font-mono text-zinc-400">{p.phone_number || "-"}</td>}
+                        {columns.whatsapp && <td className="p-4 text-xs font-mono text-zinc-400">{p.whatsapp_number || "-"}</td>}
+                        {columns.party && (
+                          <td className="p-4">
+                            <span className={`text-xs flex items-center gap-1 ${getPartyColor(p.party_affiliation)}`}>
+                              {p.party_affiliation ? <Flag size={12} fill="currentColor" /> : null}
+                              {p.party_affiliation || "-"}
+                            </span>
+                          </td>
+                        )}
+                        {columns.affiliationDate && <td className="p-4 text-xs">{formatDate(p.party_affiliation_date)}</td>}
+                        {columns.birthdate && <td className="p-4 text-xs">{formatDate(p.birthdate)}</td>}
+                        {columns.sex && <td className="p-4 text-xs">{p.sex || "-"}</td>}
+                        {columns.intent && (
+                          <td className="p-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.current_vote_intent === "SURE" ? "bg-emerald-900 text-emerald-300" : "bg-zinc-800"}`}>
+                              {p.current_vote_intent || "-"}
+                            </span>
+                          </td>
+                        )}
+                        {columns.status && (
+                          <td className="p-4">
+                            {p.has_voted ? (
+                              <span className="text-emerald-500 font-bold text-xs">VOTO</span>
+                            ) : (
+                              <span className="text-zinc-600 text-xs">Pendiente</span>
+                            )}
+                          </td>
+                        )}
+                        {columns.campaign && (
+                          <td className="p-4">
+                            <span
+                              className={`px-2 py-1 rounded text-[10px] font-black uppercase ${
+                                p.campaign_status === "VISITED"
+                                  ? "bg-emerald-900/50 text-emerald-400 border border-emerald-900"
+                                  : p.campaign_status === "CONTACTED"
+                                    ? "bg-blue-900/50 text-blue-400 border border-blue-900"
+                                    : p.campaign_status === "TO_VISIT"
+                                      ? "bg-amber-900/50 text-amber-400 border border-amber-900"
+                                      : "bg-zinc-800 text-zinc-500"
+                              }`}
+                            >
+                              {getCampaignStatusLabel(p.campaign_status)}
+                            </span>
+                          </td>
+                        )}
+                        {columns.isVisited && <td className="p-4 text-xs">{p.is_visited ? "Si" : "No"}</td>}
+                        {columns.transport && (
+                          <td className="p-4">
+                            {p.needs_transport ? (
+                              <span className="text-xs flex items-center gap-1 text-purple-400 font-bold">
+                                <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+                                {p.transport_status || "PENDIENTE"}
+                              </span>
+                            ) : (
+                              <span className="text-zinc-700 text-xs">-</span>
+                            )}
+                          </td>
+                        )}
+                        {columns.transportStatus && <td className="p-4 text-xs">{p.transport_status || "-"}</td>}
+                        {columns.dayDStatus && <td className="p-4 text-xs">{p.status_day_d || "-"}</td>}
+                        {columns.checkin && <td className="p-4 text-xs">{formatDateTime(p.station_checkin_at)}</td>}
+                        {columns.requests && (
+                          <td className="p-4 text-center text-xs">
+                            <span className="bg-zinc-800 px-2 py-0.5 rounded">{getRequestsCount(p.requests)}</span>
+                          </td>
+                        )}
+                        {columns.financial && <td className="p-4 text-xs">{p.has_financial_needs ? "Si" : "No"}</td>}
+                        {columns.financialFulfilled && <td className="p-4 text-xs">{p.financial_needs_fulfilled ? "Si" : "No"}</td>}
+                        {columns.financialAmount && (
+                          <td className="p-4 text-right text-xs font-mono">
+                            {p.financial_amount !== null && p.financial_amount !== undefined
+                              ? Number(p.financial_amount).toLocaleString()
+                              : "-"}
+                          </td>
+                        )}
+                        {columns.assignedStation && <td className="p-4 text-xs">{getStationName(p.assigned_station_id)}</td>}
+                        {columns.assignedUser && <td className="p-4 text-xs">{getUserName(p.assigned_user_id)}</td>}
+                        {columns.notes && (
+                          <td className="p-4">
+                            <div className="max-w-[240px] truncate text-xs" title={p.notes}>
+                              {p.notes || "-"}
+                            </div>
+                          </td>
+                        )}
+                        {columns.actions && (
+                          <td className="p-4 text-right">
+                            <div className="inline-flex items-center gap-2">
+                              <button
+                                onClick={() => (isEditingRow ? cancelInlineEditor() : openInlineEditor(p))}
+                                className={`p-2 rounded-full transition-colors ${
+                                  isEditingRow
+                                    ? "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
+                                    : "text-zinc-400 hover:bg-zinc-700 hover:text-white"
+                                }`}
+                                title="Edicion rapida"
+                              >
+                                <Pen size={16} />
+                              </button>
+                              <button
+                                onClick={() => setPersonToEdit(p)}
+                                className="p-2 hover:bg-zinc-700 rounded-full text-zinc-400 hover:text-white transition-colors"
+                                title="Abrir ficha completa"
+                              >
+                                <Edit size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                      {isEditingRow && inlineDraft && (
+                        <tr className="bg-black/20">
+                          <td colSpan={visibleColumnCount} className="p-4">
+                            <div className="rounded-2xl border border-blue-900/40 bg-zinc-950/80 p-4 space-y-4">
+                              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                <div>
+                                  <p className="text-xs font-black uppercase tracking-wider text-blue-400">
+                                    Edicion rapida
+                                  </p>
+                                  <p className="text-xs text-zinc-500">
+                                    Se muestran los campos visibles para esta lista. Guarda para aplicar los cambios.
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => cancelInlineEditor()}
+                                    disabled={savingInlineId === p.id}
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors disabled:opacity-50"
+                                  >
+                                    <X size={14} /> Cancelar
+                                  </button>
+                                  <button
+                                    onClick={() => saveInlineEditor(p)}
+                                    disabled={savingInlineId === p.id}
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white text-black font-bold hover:bg-zinc-200 transition-colors disabled:opacity-50"
+                                  >
+                                    <Save size={14} />
+                                    {savingInlineId === p.id ? "Guardando..." : "Guardar fila"}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                            {renderInlineField(
+                              columns.order,
+                              "Orden",
+                              <input
+                                type="number"
+                                min="1"
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.orderNumber}
+                                onChange={(e) => updateInlineDraft({ orderNumber: e.target.value })}
+                              />
+                            )}
+                            {renderInlineField(
+                              columns.table,
+                              "Mesa",
+                              <input
+                                type="number"
+                                min="1"
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.tableNumber}
+                                onChange={(e) => updateInlineDraft({ tableNumber: e.target.value })}
+                              />
+                            )}
+                            {renderInlineField(
+                              columns.address,
+                              "Direccion",
+                              <>
+                                <input
+                                  list="smart-list-address-options"
+                                  className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                  value={inlineDraft.address}
+                                  onChange={(e) => updateInlineDraft({ address: e.target.value })}
+                                />
+                                <datalist id="smart-list-address-options">
+                                  {availableAddresses.map((address) => (
+                                    <option key={address} value={address} />
+                                  ))}
+                                </datalist>
+                              </>
+                            )}
+                            {renderInlineField(
+                              columns.exactAddress,
+                              "Direccion exacta",
+                              <input
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.exactAddress}
+                                onChange={(e) => updateInlineDraft({ exactAddress: e.target.value })}
+                              />
+                            )}
+                            {renderInlineField(
+                              columns.phone,
+                              "Telefono",
+                              <input
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.phoneNumber}
+                                onChange={(e) => updateInlineDraft({ phoneNumber: e.target.value })}
+                              />
+                            )}
+                            {renderInlineField(
+                              columns.whatsapp,
+                              "WhatsApp",
+                              <input
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.whatsappNumber}
+                                onChange={(e) => updateInlineDraft({ whatsappNumber: e.target.value })}
+                              />
+                            )}
+                            {renderInlineField(
+                              columns.party,
+                              "Partido",
+                              <select
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.partyAffiliation}
+                                onChange={(e) => updateInlineDraft({ partyAffiliation: e.target.value })}
+                              >
+                                {partyAffiliationOptions.map((option) => (
+                                  <option key={option.value || "blank"} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            {renderInlineField(
+                              columns.intent,
+                              "Intencion de voto",
+                              <select
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.currentVoteIntent}
+                                onChange={(e) => updateInlineDraft({ currentVoteIntent: e.target.value })}
+                              >
+                                {voteIntentOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            {renderInlineField(
+                              columns.campaign,
+                              "Estado visita",
+                              <select
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.campaignStatus}
+                                onChange={(e) => updateInlineDraft({ campaignStatus: e.target.value })}
+                              >
+                                {campaignStatusOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            {renderInlineField(
+                              columns.transport,
+                              "Necesita transporte",
+                              <select
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.needsTransport ? "true" : "false"}
+                                onChange={(e) =>
+                                  updateInlineDraft({
+                                    needsTransport: e.target.value === "true",
+                                    transportStatus: e.target.value === "true" ? inlineDraft.transportStatus : "PENDING",
+                                  })
+                                }
+                              >
+                                <option value="false">No</option>
+                                <option value="true">Si</option>
+                              </select>
+                            )}
+                            {renderInlineField(
+                              columns.transportStatus,
+                              "Estado transporte",
+                              <select
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 disabled:opacity-50"
+                                value={inlineDraft.transportStatus}
+                                onChange={(e) => updateInlineDraft({ transportStatus: e.target.value })}
+                                disabled={!inlineDraft.needsTransport}
+                              >
+                                {transportStatusOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            {renderInlineField(
+                              columns.financial,
+                              "Aporte solicitado",
+                              <select
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 disabled:opacity-50"
+                                value={inlineDraft.hasFinancialNeeds ? "true" : "false"}
+                                onChange={(e) =>
+                                  updateInlineDraft({
+                                    hasFinancialNeeds: e.target.value === "true",
+                                    financialAmount: e.target.value === "true" ? inlineDraft.financialAmount : "0",
+                                  })
+                                }
+                                disabled={!!p.financial_needs_fulfilled}
+                              >
+                                <option value="false">No</option>
+                                <option value="true">Si</option>
+                              </select>
+                            )}
+                            {renderInlineField(
+                              columns.financialAmount,
+                              "Monto aporte",
+                              p.financial_needs_fulfilled ? (
+                                <div className="w-full bg-black border border-emerald-900/50 rounded-lg px-3 py-2 text-sm text-emerald-300 font-mono">
+                                  Gs. {Number(p.financial_amount || 0).toLocaleString("es-PY")}
+                                </div>
+                              ) : inlineDraft.hasFinancialNeeds ? (
+                                <MonetaryAmountSelector
+                                  value={inlineDraft.financialAmount}
+                                  onChange={(nextValue) => updateInlineDraft({ financialAmount: nextValue })}
+                                  selectClassName="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                  inputClassName="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white font-mono outline-none focus:border-blue-500"
+                                  summaryClassName="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono"
+                                />
+                              ) : (
+                                <div className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-600">
+                                  Activa aporte para definir monto
+                                </div>
+                              )
+                            )}
+                            {renderInlineField(
+                              columns.assignedStation,
+                              "Puesto",
+                              <select
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.assignedStationId}
+                                onChange={(e) => updateInlineDraft({ assignedStationId: e.target.value })}
+                              >
+                                <option value="">-- Ninguno --</option>
+                                {availableStations.map((station) => (
+                                  <option key={station.id} value={station.id}>
+                                    {station.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            {renderInlineField(
+                              columns.assignedUser,
+                              "Responsable",
+                              <select
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                                value={inlineDraft.assignedUserId}
+                                onChange={(e) => updateInlineDraft({ assignedUserId: e.target.value })}
+                              >
+                                <option value="">-- Nadie --</option>
+                                {availableUsers.map((user) => (
+                                  <option key={user.id} value={user.id}>
+                                    {user.full_name || user.name || user.email || user.id}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            {renderInlineField(
+                              columns.notes,
+                              "Notas",
+                              <textarea
+                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 resize-none min-h-[84px]"
+                                value={inlineDraft.notes}
+                                onChange={(e) => updateInlineDraft({ notes: e.target.value })}
+                              />,
+                              "md:col-span-2 xl:col-span-2"
+                            )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan={visibleColumnCount} className="p-10 text-center text-zinc-500">
