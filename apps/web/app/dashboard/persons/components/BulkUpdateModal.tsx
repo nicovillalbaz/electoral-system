@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../../../lib/api';
 import { getApiErrorMessage } from '../../../../lib/api-error';
+import MonetaryAmountSelector from '../../components/MonetaryAmountSelector';
 import { AlertTriangle, Loader2, X, CheckCircle, Save, Plus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from 'sonner';
@@ -282,13 +283,13 @@ export default function BulkUpdateModal({ isOpen, onClose, onSuccess, activeFilt
                             <input type="checkbox" checked={!!enabledFields['financial_amount']} onChange={() => toggleField('financial_amount')} className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-emerald-500"/>
                              <h3 className="text-xs font-bold text-emerald-500">ASIGNAR APORTE MONETARIO</h3>
                         </div>
-                        <input 
-                            type="number" 
-                            className="w-full bg-black border border-emerald-900/50 rounded p-2 text-white font-mono outline-none focus:border-emerald-500 text-right disabled:cursor-not-allowed" 
-                            placeholder="0"
+                        <MonetaryAmountSelector
                             value={updates.financial_amount || ''}
-                            onChange={e => updateValue('financial_amount', e.target.value)}
+                            onChange={(nextValue) => updateValue('financial_amount', nextValue)}
                             disabled={!enabledFields['financial_amount']}
+                            selectClassName="w-full bg-black border border-emerald-900/50 rounded p-2 text-white outline-none focus:border-emerald-500 disabled:cursor-not-allowed"
+                            inputClassName="w-full bg-black border border-emerald-900/50 rounded p-2 text-white font-mono outline-none focus:border-emerald-500 text-right disabled:cursor-not-allowed"
+                            summaryClassName="w-full bg-black border border-emerald-900/50 rounded p-2 text-zinc-300 font-mono outline-none text-right"
                         />
                     </div>
 

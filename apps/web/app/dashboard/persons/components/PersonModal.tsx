@@ -26,6 +26,44 @@ interface PersonModalProps {
   availableTags?: any[];
 }
 
+type PersonFormData = {
+  documentId: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  whatsappNumber: string;
+  address: string;
+  exactAddress: string;
+  assignedStationId: string;
+  assignedUserId: string;
+  currentVoteIntent: string;
+  campaignStatus: string;
+  notes: string;
+  needsTransport: boolean;
+  transportStatus: string;
+  requests: any[];
+  hasFinancialNeeds: boolean;
+  financialNeedsFulfilled: boolean;
+  financialAmount: number;
+  partyAffiliation: string;
+  tableNumber: string;
+  orderNumber: string;
+};
+
+const parseOptionalNumber = (value: string) => {
+  const trimmed = value.trim();
+  if (trimmed === "") return undefined;
+  const parsed = Number(trimmed);
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+const parseNullableNumber = (value: string) => {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  const parsed = Number(trimmed);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
 export default function PersonModal({
   isOpen,
   onClose,
@@ -47,7 +85,7 @@ export default function PersonModal({
   const [stations, setStations] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]); // <--- Users List
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<PersonFormData>({
     documentId: "", // CREATE ONLY
     firstName: "",  // CREATE ONLY
     lastName: "",   // CREATE ONLY
@@ -67,7 +105,9 @@ export default function PersonModal({
     hasFinancialNeeds: false,
     financialNeedsFulfilled: false,
     financialAmount: 0,
-    partyAffiliation: "ANR" 
+    partyAffiliation: "ANR",
+    tableNumber: "",
+    orderNumber: "",
   });
 
   const financialLocked = formData.financialNeedsFulfilled;
@@ -104,7 +144,9 @@ export default function PersonModal({
                 hasFinancialNeeds: personToEdit.has_financial_needs || false,
                 financialNeedsFulfilled: personToEdit.financial_needs_fulfilled || false,
                 financialAmount: personToEdit.financial_amount ? Number(personToEdit.financial_amount) : 0,
-                partyAffiliation: personToEdit.party_affiliation || "ANR" // <--- Load
+                partyAffiliation: personToEdit.party_affiliation || "ANR", // <--- Load
+                tableNumber: personToEdit.voting_table_number?.toString() || "",
+                orderNumber: personToEdit.voting_order_number?.toString() || "",
             });
             fetchTags(personToEdit.id);
             fetchHistory(personToEdit.id);
@@ -116,7 +158,7 @@ export default function PersonModal({
                 assignedStationId: "", assignedUserId: "", currentVoteIntent: "UNDECIDED", campaignStatus: "NOT_VISITED",
                 notes: "", needsTransport: false, transportStatus: "PENDING",
                 requests: [], hasFinancialNeeds: false, financialNeedsFulfilled: false, financialAmount: 0,
-                partyAffiliation: "ANR"
+                partyAffiliation: "ANR", tableNumber: "", orderNumber: ""
             });
             setAssignedTags([]);
             setHistory([]);
@@ -234,6 +276,16 @@ export default function PersonModal({
         if (formData.hasFinancialNeeds !== !!personToEdit.has_financial_needs) payload.hasFinancialNeeds = formData.hasFinancialNeeds;
         check('partyAffiliation', 'party_affiliation');
 
+        const nextTableNumber = parseNullableNumber(formData.tableNumber);
+        if (nextTableNumber !== (personToEdit.voting_table_number ?? null)) {
+            payload.tableNumber = nextTableNumber;
+        }
+
+        const nextOrderNumber = parseNullableNumber(formData.orderNumber);
+        if (nextOrderNumber !== (personToEdit.voting_order_number ?? null)) {
+            payload.orderNumber = nextOrderNumber;
+        }
+
         // Requests Array Logic (Compare as sets/JSON)
         // Requests Array Logic (Compare as sets/JSON)
         // We now store objects, but backend might expect array of jsonb.
@@ -248,7 +300,11 @@ export default function PersonModal({
         }
       } else {
         // Create Mode - Send all
-        await api.post("/persons", formData);
+        await api.post("/persons", {
+          ...formData,
+          tableNumber: parseOptionalNumber(formData.tableNumber),
+          orderNumber: parseOptionalNumber(formData.orderNumber),
+        });
       }
       
       onSuccess();
@@ -363,7 +419,7 @@ export default function PersonModal({
                 {/* CONTACT INFO */}
                 <div className="space-y-4 pt-4 border-t border-zinc-900">
                     <h3 className="text-xs font-black text-zinc-500 uppercase">INFORMACIÓN DE CONTACTO</h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-zinc-500 mb-1">CELULAR</label>
                             <input className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-emerald-500" value={formData.phoneNumber} onChange={e => setFormData({...formData, phoneNumber: e.target.value})} placeholder="09xx..." />
@@ -378,7 +434,7 @@ export default function PersonModal({
                 {/* LOCATION */}
                 <div className="space-y-4 pt-4 border-t border-zinc-900">
                     <h3 className="text-xs font-black text-zinc-500 uppercase">UBICACIÓN & PUESTO</h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-zinc-500 mb-1">BARRIO / SECCIONAL (Select)</label>
                             <input list="address-options" className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="Seleccionar..." />
@@ -387,12 +443,37 @@ export default function PersonModal({
                             </datalist>
                         </div>
                         <div>
+                            <label className="block text-xs font-bold text-zinc-500 mb-1">PUESTO ASIGNADO</label>
                             <select className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500" value={formData.assignedStationId} onChange={(e) => setFormData({ ...formData, assignedStationId: e.target.value })}>
                                 <option value="">-- Ninguno --</option>
                                 {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                         </div>
-                        <div className="col-span-2 grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-zinc-500 mb-1">NUMERO DE MESA</label>
+                            <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500"
+                                value={formData.tableNumber}
+                                onChange={(e) => setFormData({ ...formData, tableNumber: e.target.value })}
+                                placeholder="Ej: 12"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-zinc-500 mb-1">NUMERO DE ORDEN</label>
+                            <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500"
+                                value={formData.orderNumber}
+                                onChange={(e) => setFormData({ ...formData, orderNumber: e.target.value })}
+                                placeholder="Ej: 145"
+                            />
+                        </div>
+                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                              <div>
                                 <label className="block text-xs font-bold text-zinc-500 mb-1">REFERENCIA / DIRECCIÓN EXACTA</label>
                                 <input className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 text-white outline-none focus:border-blue-500" value={formData.exactAddress} onChange={e => setFormData({...formData, exactAddress: e.target.value})} placeholder="Ej: Portón verde..." />

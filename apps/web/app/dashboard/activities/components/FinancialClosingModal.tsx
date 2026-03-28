@@ -3,6 +3,7 @@ import { useState } from "react";
 import { X, DollarSign, Save, Loader2 } from "lucide-react";
 import api from "../../../../lib/api";
 import { getApiErrorMessage } from "../../../../lib/api-error";
+import MonetaryAmountSelector from "../../components/MonetaryAmountSelector";
 import { toast } from "sonner";
 
 interface FinancialClosingModalProps {
@@ -12,12 +13,8 @@ interface FinancialClosingModalProps {
   task: any;
 }
 
-const QUICK_AMOUNT_VALUES = [50000, 100000] as const;
-type QuickAmountPreset = `${(typeof QUICK_AMOUNT_VALUES)[number]}` | "MANUAL";
-
 export default function FinancialClosingModal({ isOpen, onClose, onSuccess, task }: FinancialClosingModalProps) {
   const [amount, setAmount] = useState("");
-  const [amountPreset, setAmountPreset] = useState<QuickAmountPreset>("MANUAL");
   const [concept, setConcept] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -37,7 +34,6 @@ export default function FinancialClosingModal({ isOpen, onClose, onSuccess, task
         onSuccess();
         onClose();
         setAmount("");
-        setAmountPreset("MANUAL");
         setConcept("");
         toast.success("Cierre financiero registrado.");
     } catch (e) {
@@ -70,38 +66,14 @@ export default function FinancialClosingModal({ isOpen, onClose, onSuccess, task
 
             <div>
                 <label className="block text-xs font-bold text-zinc-400 mb-1">MONTO ENTREGADO (Gs)</label>
-                <div className="space-y-2">
-                    <select
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-sm text-white outline-none focus:border-yellow-500 transition-colors"
-                        value={amountPreset}
-                        onChange={(e) => {
-                            const nextPreset = e.target.value as QuickAmountPreset;
-                            setAmountPreset(nextPreset);
-                            if (nextPreset !== "MANUAL") {
-                                setAmount(nextPreset);
-                            }
-                        }}
-                    >
-                        <option value="50000">Gs. 50.000</option>
-                        <option value="100000">Gs. 100.000</option>
-                        <option value="MANUAL">Otro (manual)</option>
-                    </select>
-                    {amountPreset === "MANUAL" ? (
-                        <input 
-                            type="number" 
-                            className="w-full bg-zinc-900 border border-zinc-800 rounded p-3 text-white text-lg font-mono outline-none focus:border-yellow-500 transition-colors"
-                            placeholder="0"
-                            value={amount} 
-                            onChange={e => setAmount(e.target.value)} 
-                            autoFocus 
-                            min={0}
-                        />
-                    ) : (
-                        <div className="w-full bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-200 text-sm font-mono">
-                            Monto seleccionado: Gs. {Number(amount || 0).toLocaleString("es-PY")}
-                        </div>
-                    )}
-                </div>
+                <MonetaryAmountSelector
+                    value={amount}
+                    onChange={setAmount}
+                    selectClassName="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-sm text-white outline-none focus:border-yellow-500 transition-colors"
+                    inputClassName="w-full bg-zinc-900 border border-zinc-800 rounded p-3 text-white text-lg font-mono outline-none focus:border-yellow-500 transition-colors"
+                    summaryClassName="w-full bg-zinc-900 border border-zinc-800 rounded p-3 text-zinc-200 text-sm font-mono"
+                    autoFocusManualInput
+                />
             </div>
             
             <div>

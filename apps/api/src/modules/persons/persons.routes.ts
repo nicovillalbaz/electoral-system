@@ -149,8 +149,8 @@ export async function personsRoutes(app: FastifyInstance) {
           department: z.string().optional(),
           district: z.string().optional(),
           pollingPlace: z.string().optional(),
-          tableNumber: z.coerce.number().optional(),
-          orderNumber: z.coerce.number().optional(),
+          tableNumber: z.coerce.number().nullable().optional(),
+          orderNumber: z.coerce.number().nullable().optional(),
           partyAffiliation: z.string().optional(),
           currentVoteIntent: z
             .enum([
@@ -205,8 +205,8 @@ export async function personsRoutes(app: FastifyInstance) {
           department: z.string().optional(),
           district: z.string().optional(),
           pollingPlace: z.string().optional(),
-          tableNumber: z.coerce.number().optional(),
-          orderNumber: z.coerce.number().optional(),
+          tableNumber: z.coerce.number().nullable().optional(),
+          orderNumber: z.coerce.number().nullable().optional(),
           partyAffiliation: z.string().optional(),
 
           // VALIDACIÓN CORRECTA:

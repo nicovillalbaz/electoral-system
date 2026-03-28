@@ -1,0 +1,20 @@
+
+> web@0.1.0 dev
+> next dev
+
+  ▲ Next.js 14.2.3
+  - Local:        http://localhost:3000
+  - Environments: .env.local, .env
+
+ ✓ Starting...
+ ✓ Ready in 2.7s
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 678ms (73 modules)
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 9.1s (514 modules)
+ GET /does-not-exist 404 in 9350ms
+ GET / 307 in 9513ms
+ ○ Compiling /login ...
+ ✓ Compiled /login in 1754ms (683 modules)
+ GET /login 200 in 1494ms
+^C^C

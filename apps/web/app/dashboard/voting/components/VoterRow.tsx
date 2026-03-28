@@ -2,6 +2,7 @@ import { memo, useState, useRef, useEffect } from "react";
 import { Check, User, MapPin, Truck, AlertTriangle, DollarSign, CheckCircle, Vote, X, Car } from "lucide-react";
 import safeApi from "../../../../lib/api";
 import { getApiErrorMessage } from "../../../../lib/api-error";
+import MonetaryAmountSelector from "../../components/MonetaryAmountSelector";
 import { toast } from "sonner";
 
 type Voter = {
@@ -50,24 +51,13 @@ const statusLabels: any = {
     VOTED: "YA VOTÓ"
 };
 
-const QUICK_AMOUNT_VALUES = [50000, 100000] as const;
-type QuickAmountPreset = `${(typeof QUICK_AMOUNT_VALUES)[number]}` | "MANUAL";
-
-const resolveQuickAmountPreset = (amount: number): QuickAmountPreset => {
-    if (QUICK_AMOUNT_VALUES.includes(amount as (typeof QUICK_AMOUNT_VALUES)[number])) {
-        return String(amount) as QuickAmountPreset;
-    }
-    return "MANUAL";
-};
-
 const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
     const [openPopover, setOpenPopover] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
     // Temp State for Inputs
     const [tempStationId, setTempStationId] = useState("");
-    const [tempFinanceAmount, setTempFinanceAmount] = useState(0);
-    const [financePreset, setFinancePreset] = useState<QuickAmountPreset>("MANUAL");
+    const [tempFinanceAmount, setTempFinanceAmount] = useState("");
     const [tempNotes, setTempNotes] = useState("");
     const [tempRequests, setTempRequests] = useState<any[]>([]);
     const [tempNeedsTransport, setTempNeedsTransport] = useState(false);
@@ -101,8 +91,7 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
         }
         if (openPopover === 'FINANCE') {
             const currentAmount = voter.financial_amount ? Number(voter.financial_amount) : 0;
-            setTempFinanceAmount(currentAmount);
-            setFinancePreset(resolveQuickAmountPreset(currentAmount));
+            setTempFinanceAmount(currentAmount ? String(currentAmount) : "");
         }
         if (openPopover === 'NOTES') {
             setTempNotes(voter.notes || "");
@@ -552,34 +541,14 @@ const VoterRow = memo(({ voter, onUpdate, stations }: Props) => {
                              ) : (
                                  <>
                                      <label className="text-xs font-bold text-zinc-400">MONTO (Gs.)</label>
-                                     <select
-                                         className="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
-                                         value={financePreset}
-                                         onChange={(e) => {
-                                             const nextPreset = e.target.value as QuickAmountPreset;
-                                             setFinancePreset(nextPreset);
-                                             if (nextPreset !== "MANUAL") {
-                                                 setTempFinanceAmount(Number(nextPreset));
-                                             }
-                                         }}
-                                     >
-                                         <option value="50000">Gs. 50.000</option>
-                                         <option value="100000">Gs. 100.000</option>
-                                         <option value="MANUAL">Otro (manual)</option>
-                                     </select>
-                                     {financePreset === "MANUAL" ? (
-                                         <input 
-                                             type="number" 
-                                             placeholder="Monto"
-                                             className="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
-                                             value={tempFinanceAmount}
-                                             onChange={(e) => setTempFinanceAmount(Number(e.target.value))}
-                                         />
-                                     ) : (
-                                         <div className="text-xs text-zinc-400 bg-zinc-950 border border-zinc-800 rounded p-2 font-mono">
-                                             Monto seleccionado: Gs. {tempFinanceAmount.toLocaleString("es-PY")}
-                                         </div>
-                                     )}
+                                     <MonetaryAmountSelector
+                                         value={tempFinanceAmount}
+                                         onChange={setTempFinanceAmount}
+                                         selectClassName="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
+                                         inputClassName="bg-zinc-950 border border-zinc-800 rounded p-2 text-sm text-white"
+                                         summaryClassName="text-xs text-zinc-400 bg-zinc-950 border border-zinc-800 rounded p-2 font-mono"
+                                         manualPlaceholder="Monto"
+                                     />
                                      <button 
                                         onClick={handleFinanceSave}
                                         disabled={loading}

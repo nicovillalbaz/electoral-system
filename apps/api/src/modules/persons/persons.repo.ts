@@ -302,6 +302,8 @@ export async function personCreate(campaignId: string, data: any) {
          last_name = COALESCE(EXCLUDED.last_name, global_citizens.last_name),
          phone_number = COALESCE(EXCLUDED.phone_number, global_citizens.phone_number),
          address = COALESCE(EXCLUDED.address, global_citizens.address),
+         voting_table_number = COALESCE(EXCLUDED.voting_table_number, global_citizens.voting_table_number),
+         voting_order_number = COALESCE(EXCLUDED.voting_order_number, global_citizens.voting_order_number),
          updated_at = NOW()
        RETURNING id`,
       [
@@ -404,8 +406,9 @@ export async function personUpdate(
     const currentRes = await client.query(
       `SELECT p.current_vote_intent, p.notes, p.campaign_status, 
                 p.needs_transport, p.transport_status, p.exact_address, p.whatsapp_number, p.assigned_station_id, p.assigned_user_id,
-                p.has_financial_needs, p.financial_needs_fulfilled,
-                g.phone_number, g.address, g.location_place, g.first_name, g.last_name
+                p.has_financial_needs, p.financial_needs_fulfilled, p.requests, p.financial_amount,
+                g.document_id, g.phone_number, g.address, g.location_place, g.first_name, g.last_name,
+                g.party_affiliation, g.voting_table_number, g.voting_order_number
          FROM persons p
          JOIN global_citizens g ON p.citizen_id = g.id
          WHERE p.id = $1 AND ${campaignHierarchyScope(2, "p")} AND p.deleted_at IS NULL`,
@@ -429,22 +432,30 @@ export async function personUpdate(
       patch.phoneNumber !== undefined ||
       patch.address !== undefined ||
       patch.pollingPlace !== undefined ||
-      patch.partyAffiliation !== undefined // <--- Nuevo
+      patch.partyAffiliation !== undefined ||
+      patch.tableNumber !== undefined ||
+      patch.orderNumber !== undefined
     ) {
       await client.query(
         `UPDATE global_citizens 
          SET phone_number = COALESCE($1, phone_number),
              address = COALESCE($2, address),
              party_affiliation = COALESCE($3, party_affiliation),
+             voting_table_number = CASE WHEN $4 THEN $5 ELSE voting_table_number END,
+             voting_order_number = CASE WHEN $6 THEN $7 ELSE voting_order_number END,
              updated_at = NOW()
          FROM persons p
          WHERE global_citizens.id = p.citizen_id
-           AND p.id = $4
-           AND ${campaignHierarchyScope(5, "p")}`,
+           AND p.id = $8
+           AND ${campaignHierarchyScope(9, "p")}`,
         [
           patch.phoneNumber,
           patch.address,
           patch.partyAffiliation,
+          Object.prototype.hasOwnProperty.call(patch, "tableNumber"),
+          patch.tableNumber ?? null,
+          Object.prototype.hasOwnProperty.call(patch, "orderNumber"),
+          patch.orderNumber ?? null,
           personId,
           campaignId,
         ],
@@ -517,6 +528,9 @@ export async function personUpdate(
     if (patch.address && patch.address !== before.address) changes.push(`Barrio actualizado`);
     if (patch.partyAffiliation && patch.partyAffiliation !== before.party_affiliation) changes.push(`Afiliación: ${patch.partyAffiliation}`); // <--- Log
     
+    if (patch.tableNumber !== undefined && patch.tableNumber !== before.voting_table_number) changes.push(`Mesa: ${patch.tableNumber ?? "Sin mesa"}`);
+    if (patch.orderNumber !== undefined && patch.orderNumber !== before.voting_order_number) changes.push(`Orden: ${patch.orderNumber ?? "Sin orden"}`);
+
     // Logs nuevos
     if (patch.exactAddress && patch.exactAddress !== before.exact_address) changes.push(`Dir. Exacta actualizada`);
     if (patch.whatsappNumber && patch.whatsappNumber !== before.whatsapp_number) changes.push(`WhatsApp actualizado`);

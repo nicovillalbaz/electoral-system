@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import safeApi from "../../../../lib/api";
 import { getApiErrorMessage } from "../../../../lib/api-error";
 import { addToQueue } from "../../../../lib/offline-queue";
+import MonetaryAmountSelector from "../../components/MonetaryAmountSelector";
 import { User, MapPin, CheckCircle, Smartphone, DollarSign, ClipboardList, Send, AlertTriangle, Truck, Save, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,16 +19,6 @@ interface VoterControlPanelProps {
     onClose: () => void;
     onUpdate: (updatedVoter: any) => void; 
 }
-
-const QUICK_AMOUNT_VALUES = [50000, 100000] as const;
-type QuickAmountPreset = `${(typeof QUICK_AMOUNT_VALUES)[number]}` | "MANUAL";
-
-const resolveQuickAmountPreset = (amount: number): QuickAmountPreset => {
-    if (QUICK_AMOUNT_VALUES.includes(amount as (typeof QUICK_AMOUNT_VALUES)[number])) {
-        return String(amount) as QuickAmountPreset;
-    }
-    return "MANUAL";
-};
 
 export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterControlPanelProps) {
     const [loading, setLoading] = useState(false);
@@ -52,9 +43,6 @@ export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterCon
         // Notes
         notes: voter.notes || ""
     });
-    const [financePreset, setFinancePreset] = useState<QuickAmountPreset>(
-        resolveQuickAmountPreset(Number(voter.financial_amount || 0))
-    );
 
     const [stationOptions, setStationOptions] = useState<any[]>([]);
     const [userOptions, setUserOptions] = useState<AppUser[]>([]);
@@ -71,10 +59,6 @@ export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterCon
             logistics_responsible: logReq?.assignedUserId || logReq?.responsible || "" // Load ID or legacy legacy name
         }));
     }, [voter]);
-
-    useEffect(() => {
-        setFinancePreset(resolveQuickAmountPreset(Number(voter.financial_amount || 0)));
-    }, [voter.id, voter.financial_amount]);
 
     // Load PCs & Users
     useEffect(() => {
@@ -298,37 +282,14 @@ export default function VoterControlPanel({ voter, onClose, onUpdate }: VoterCon
                     </div>
                     {form.has_financial_needs && (
                         <div className="space-y-2 animate-in slide-in-from-top-1">
-                            <select
-                                className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2 text-sm text-white"
-                                value={financePreset}
-                                onChange={(e) => {
-                                    const nextPreset = e.target.value as QuickAmountPreset;
-                                    setFinancePreset(nextPreset);
-                                    if (nextPreset !== "MANUAL") {
-                                        handleChange('financial_amount', Number(nextPreset));
-                                    }
-                                }}
-                            >
-                                <option value="50000">Gs. 50.000</option>
-                                <option value="100000">Gs. 100.000</option>
-                                <option value="MANUAL">Otro (manual)</option>
-                            </select>
-                            {financePreset === "MANUAL" ? (
-                                <div className="relative">
-                                    <span className="absolute left-3 top-2 text-zinc-500 text-sm">Gs.</span>
-                                    <input 
-                                        type="number" 
-                                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg pl-10 p-2 text-sm text-white font-mono"
-                                        value={form.financial_amount}
-                                        onChange={(e) => handleChange('financial_amount', e.target.value)}
-                                        placeholder="0"
-                                    />
-                                </div>
-                            ) : (
-                                <div className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2 text-xs text-zinc-300 font-mono">
-                                    Monto seleccionado: Gs. {Number(form.financial_amount || 0).toLocaleString("es-PY")}
-                                </div>
-                            )}
+                            <MonetaryAmountSelector
+                                value={form.financial_amount}
+                                onChange={(nextValue) => handleChange('financial_amount', nextValue)}
+                                selectClassName="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2 text-sm text-white"
+                                inputClassName="w-full bg-zinc-950 border border-zinc-700 rounded-lg pl-10 p-2 text-sm text-white font-mono"
+                                summaryClassName="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2 text-xs text-zinc-300 font-mono"
+                                showCurrencyPrefix
+                            />
                         </div>
                     )}
                 </div>
