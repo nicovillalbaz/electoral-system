@@ -1,4 +1,5 @@
 import { query } from "../../db/query";
+import { campaignTreeScope } from "../../common/campaign/scope";
 
 interface LogEventParams {
   campaignId: string;
@@ -33,13 +34,12 @@ interface ListEventsFilters {
 }
 
 export async function listEvents(filters: ListEventsFilters) {
-  // Construcción dinámica de query para soportar múltiples filtros
   let sql = `
     SELECT e.*, u.full_name as actor_name, s.name as station_name
     FROM events e
     LEFT JOIN users u ON e.actor_user_id = u.id
     LEFT JOIN stations s ON e.station_id = s.id
-    WHERE e.campaign_id = $1
+    WHERE ${campaignTreeScope("e", 1)}
   `;
   const params: any[] = [filters.campaignId];
   let paramIndex = 2;
@@ -70,7 +70,7 @@ export async function getEventById(campaignId: string, eventId: string) {
      FROM events e
      LEFT JOIN users u ON e.actor_user_id = u.id
      LEFT JOIN stations s ON e.station_id = s.id
-     WHERE e.campaign_id = $1 AND e.id = $2
+     WHERE ${campaignTreeScope("e", 1)} AND e.id = $2
      LIMIT 1`,
     [campaignId, eventId]
   );

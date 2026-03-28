@@ -17,7 +17,10 @@ function LoginForm() {
     setError('');
 
     try {
-      const res = await api.post('/auth/login', { email, password });
+      const res = await api.post('/auth/login', {
+        email: email.trim().toLowerCase(),
+        password,
+      });
 
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data.user));
@@ -30,7 +33,7 @@ function LoginForm() {
       }
     } catch (err: any) {
       console.error(err);
-      setError('Datos incorrectos. Verifica tu email y contrasena.');
+      setError(err?.response?.data?.error || 'Datos incorrectos. Verifica tu email y contrasena.');
     } finally {
       setLoading(false);
     }

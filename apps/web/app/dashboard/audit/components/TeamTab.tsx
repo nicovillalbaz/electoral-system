@@ -6,6 +6,7 @@ import { useState } from "react";
 import TeamMemberModal from "./TeamMemberModal";
 import { getApiErrorMessage } from "../../../../lib/api-error";
 import { toast } from "sonner";
+import api from "../../../../lib/api";
 
 interface TeamTabProps {
   stationId: string;
@@ -19,40 +20,28 @@ export default function TeamTab({ stationId, collaborators, users = [], onRefres
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleAdd = async (personId: string | null, role: string, citizenData?: any) => {
-    const res = await fetch(`/api/stations/${stationId}/collaborators`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ personId, role, ...citizenData }),
-    });
-    if (res.ok) {
+    try {
+      await api.post(`/stations/${stationId}/collaborators`, { personId, role, ...citizenData });
       onRefresh();
       toast.success("Colaborador agregado.");
-    } else {
-      const err = await res.json().catch(() => ({}));
-      toast.error(err?.error || err?.message || "Error al agregar colaborador");
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "Error al agregar colaborador"));
     }
   };
 
   const handleRemove = async (personId: string) => {
-    if (!confirm("¿Seguro que deseas remover a este colaborador?")) return;
-    
+    if (!confirm("Seguro que deseas remover a este colaborador?")) return;
+
     setDeletingId(personId);
     try {
-        const res = await fetch(`/api/stations/${stationId}/collaborators/${personId}`, {
-            method: "DELETE",
-        });
-        if (res.ok) {
-            onRefresh();
-            toast.success("Colaborador removido.");
-        } else {
-            const err = await res.json().catch(() => ({}));
-            toast.error(err?.error || err?.message || "Error al remover colaborador");
-        }
-    } catch(e) {
-        console.error(e);
-        toast.error(getApiErrorMessage(e, "Error al remover colaborador"));
+      await api.delete(`/stations/${stationId}/collaborators/${personId}`);
+      onRefresh();
+      toast.success("Colaborador removido.");
+    } catch (e) {
+      console.error(e);
+      toast.error(getApiErrorMessage(e, "Error al remover colaborador"));
     } finally {
-        setDeletingId(null);
+      setDeletingId(null);
     }
   };
 
@@ -61,7 +50,7 @@ export default function TeamTab({ stationId, collaborators, users = [], onRefres
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-xl font-bold text-white">Equipo del PC</h3>
-          <p className="text-zinc-500 text-sm">Gestiona quiénes son responsables en este lugar.</p>
+          <p className="text-zinc-500 text-sm">Gestiona quienes son responsables en este lugar.</p>
         </div>
         <button
           onClick={() => setIsModalOpen(true)}
@@ -92,7 +81,7 @@ export default function TeamTab({ stationId, collaborators, users = [], onRefres
                   </div>
                 </div>
               </div>
-              
+
               <button
                 onClick={() => handleRemove(member.person_id)}
                 disabled={deletingId === member.person_id}
@@ -106,7 +95,7 @@ export default function TeamTab({ stationId, collaborators, users = [], onRefres
 
         {collaborators.length === 0 && (
           <div className="col-span-full py-12 text-center border-2 border-dashed border-zinc-800 rounded-xl text-zinc-600">
-            No hay colaboradores asignados aún.
+            No hay colaboradores asignados aun.
           </div>
         )}
       </div>

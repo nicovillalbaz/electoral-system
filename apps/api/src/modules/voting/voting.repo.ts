@@ -4,6 +4,11 @@ import { taskCreate } from "../tasks/tasks.repo";
 const campaignHierarchyScope = (alias: string, campaignParamIndex: number) =>
   `(${alias}.campaign_id = $${campaignParamIndex} OR ${alias}.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $${campaignParamIndex}))`;
 
+const normalizedCitizenAddressSql =
+  "TRIM(UPPER(REGEXP_REPLACE(g.address, '\\s+', ' ', 'g')))";
+const normalizedNeighborhoodNameSql =
+  "TRIM(UPPER(REGEXP_REPLACE(n.name, '\\s+', ' ', 'g')))";
+
 export async function markVoted(input: {
   campaignId: string;
   personId: string;
@@ -68,12 +73,24 @@ export async function listMissingByTerritory(input: {
   limit?: number;
 }) {
   const params: any[] = [input.campaignId];
-  // Hierarchy Support
-  let where = `WHERE (p.campaign_id=$1 OR p.campaign_id IN (SELECT id FROM campaigns WHERE parent_campaign_id = $1)) AND p.has_voted=false`;
+  const conditions = [
+    campaignHierarchyScope("p", 1),
+    `p.has_voted = false`,
+    `p.deleted_at IS NULL`,
+  ];
 
-  if (input.cityId) { params.push(input.cityId); where += ` AND p.city_id=$${params.length}`; }
-  if (input.zoneId) { params.push(input.zoneId); where += ` AND p.zone_id=$${params.length}`; }
-  if (input.neighborhoodId) { params.push(input.neighborhoodId); where += ` AND p.neighborhood_id=$${params.length}`; }
+  if (input.cityId) {
+    params.push(input.cityId);
+    conditions.push(`c.id = $${params.length}`);
+  }
+  if (input.zoneId) {
+    params.push(input.zoneId);
+    conditions.push(`z.id = $${params.length}`);
+  }
+  if (input.neighborhoodId) {
+    params.push(input.neighborhoodId);
+    conditions.push(`n.id = $${params.length}`);
+  }
 
   const limit = input.limit ?? 200;
   params.push(limit);
@@ -85,12 +102,24 @@ export async function listMissingByTerritory(input: {
         g.first_name, 
         g.last_name, 
         p.current_vote_intent, 
-        p.city_id, 
-        p.zone_id, 
-        p.neighborhood_id
+        c.id AS city_id,
+        c.name AS city_name,
+        z.id AS zone_id,
+        z.name AS zone_name,
+        n.id AS neighborhood_id,
+        n.name AS neighborhood_name,
+        g.address
      FROM persons p
      JOIN global_citizens g ON p.citizen_id = g.id
-     ${where}
+     LEFT JOIN polling_tables pt ON g.voting_table_id = pt.id
+     LEFT JOIN polling_places pp ON pt.polling_place_id = pp.id
+     LEFT JOIN zones z ON pp.zone_id = z.id
+     LEFT JOIN cities c ON z.city_id = c.id
+     LEFT JOIN neighborhoods n
+       ON ${campaignHierarchyScope("n", 1)}
+      AND n.zone_id = z.id
+      AND ${normalizedNeighborhoodNameSql} = ${normalizedCitizenAddressSql}
+     WHERE ${conditions.join(" AND ")}
      ORDER BY g.last_name, g.first_name
      LIMIT $${params.length}`,
     params

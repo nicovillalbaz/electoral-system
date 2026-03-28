@@ -9,8 +9,6 @@ const STATION_RETURNING_COLUMNS = `
   created_at,
   address,
   notes,
-  latitude,
-  longitude,
   metadata,
   deleted_at,
   manager_user_id
@@ -111,8 +109,6 @@ export async function stationList(campaignId: string) {
         s.created_at,
         s.address,
         s.notes,
-        s.latitude,
-        s.longitude,
         s.metadata,
         s.deleted_at,
         s.manager_user_id,

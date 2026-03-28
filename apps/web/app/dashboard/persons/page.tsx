@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useDebounce } from "use-debounce";
 import api from "../../../lib/api";
 import { 
@@ -12,7 +12,7 @@ import { useSearchParams } from 'next/navigation'; // Importa esto
 import PersonModal from "./components/PersonModal";
 import FilterModal from "./components/FilterModal";
 
-export default function PersonsPage() {
+function PersonsPageContent() {
   const searchParams = useSearchParams();
   useEffect(() => {
     // Si la URL trae filtros (ej: vinimos de una Lista Inteligente)
@@ -426,5 +426,21 @@ export default function PersonsPage() {
       />
 
     </div>
+  );
+}
+
+export default function PersonsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-6 pb-20 relative z-0">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-sm text-zinc-500">
+            Cargando padron...
+          </div>
+        </div>
+      }
+    >
+      <PersonsPageContent />
+    </Suspense>
   );
 }

@@ -1,4 +1,5 @@
 import { query } from "../../db/query";
+import { campaignTreeScope } from "../../common/campaign/scope";
 
 export interface Notification {
   id: string;
@@ -28,9 +29,9 @@ export async function createNotification(data: {
 
 export async function getUnreadNotifications(campaignId: string, userId: string) {
   const sql = `
-    SELECT * FROM notifications 
-    WHERE campaign_id = $1 AND user_id = $2 AND is_read = false
-    ORDER BY created_at DESC
+    SELECT * FROM notifications n
+    WHERE ${campaignTreeScope("n", 1)} AND n.user_id = $2 AND n.is_read = false
+    ORDER BY n.created_at DESC
   `;
   const res = await query(sql, [campaignId, userId]);
   return res.rows;
@@ -38,9 +39,9 @@ export async function getUnreadNotifications(campaignId: string, userId: string)
 
 export async function markNotificationAsRead(campaignId: string, userId: string, notificationId: string) {
   const sql = `
-    UPDATE notifications 
-    SET is_read = true 
-    WHERE id = $1 AND campaign_id = $2 AND user_id = $3
+    UPDATE notifications n
+    SET is_read = true
+    WHERE n.id = $1 AND ${campaignTreeScope("n", 2)} AND n.user_id = $3
     RETURNING *
   `;
   const res = await query(sql, [notificationId, campaignId, userId]);
@@ -48,12 +49,12 @@ export async function markNotificationAsRead(campaignId: string, userId: string,
 }
 
 export async function markAllNotificationsAsRead(campaignId: string, userId: string) {
-    const sql = `
-      UPDATE notifications 
-      SET is_read = true 
-      WHERE campaign_id = $1 AND user_id = $2
-      RETURNING *
-    `;
-    const res = await query(sql, [campaignId, userId]);
-    return res.rows;
-  }
+  const sql = `
+    UPDATE notifications n
+    SET is_read = true
+    WHERE ${campaignTreeScope("n", 1)} AND n.user_id = $2
+    RETURNING *
+  `;
+  const res = await query(sql, [campaignId, userId]);
+  return res.rows;
+}

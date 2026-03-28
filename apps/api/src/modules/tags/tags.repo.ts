@@ -1,4 +1,5 @@
 import { query } from "../../db/query";
+import { campaignTreeScope } from "../../common/campaign/scope";
 
 export async function tagCreate(campaignId: string, name: string, color?: string | null) {
   const res = await query(
@@ -9,7 +10,13 @@ export async function tagCreate(campaignId: string, name: string, color?: string
 }
 
 export async function tagList(campaignId: string) {
-  const res = await query(`SELECT * FROM tags WHERE campaign_id=$1 ORDER BY name`, [campaignId]);
+  const res = await query(
+    `SELECT *
+     FROM tags t
+     WHERE ${campaignTreeScope("t", 1)}
+     ORDER BY t.name`,
+    [campaignId]
+  );
   return res.rows;
 }
 
@@ -26,7 +33,8 @@ export async function assignTag(campaignId: string, personId: string, tagId: str
 
 export async function removeTag(campaignId: string, personId: string, tagId: string) {
   await query(
-    `DELETE FROM person_tags WHERE campaign_id=$1 AND person_id=$2 AND tag_id=$3`,
+    `DELETE FROM person_tags pt
+     WHERE ${campaignTreeScope("pt", 1)} AND pt.person_id=$2 AND pt.tag_id=$3`,
     [campaignId, personId, tagId]
   );
 }
@@ -36,7 +44,7 @@ export async function listPersonTags(campaignId: string, personId: string) {
     `SELECT t.*
      FROM person_tags pt
      JOIN tags t ON t.id = pt.tag_id
-     WHERE pt.campaign_id=$1 AND pt.person_id=$2
+     WHERE ${campaignTreeScope("pt", 1)} AND pt.person_id=$2
      ORDER BY t.name`,
     [campaignId, personId]
   );

@@ -1,4 +1,5 @@
 import { pool, query } from "../../db/query";
+import { campaignTreeScope } from "../../common/campaign/scope";
 
 const normalizedCitizenAddressSql =
   "TRIM(UPPER(REGEXP_REPLACE(g.address, '\\s+', ' ', 'g')))";
@@ -22,7 +23,13 @@ export async function ensureSystemLists(campaignId: string) {
   const client = await pool.connect();
   try {
     // 1. Revisar si ya existen listas
-    const check = await client.query(`SELECT count(*) FROM lists WHERE campaign_id = $1`, [campaignId]);
+    const check = await client.query(
+      `SELECT count(*)
+       FROM lists l
+       WHERE ${campaignTreeScope("l", 1)}
+         AND l.deleted_at IS NULL`,
+      [campaignId]
+    );
     if (parseInt(check.rows[0].count) > 0) return; // Ya tiene listas, no hacemos nada.
 
     // 2. Insertar listas por defecto
@@ -62,16 +69,16 @@ export async function ensureSystemLists(campaignId: string) {
 export async function listsGetAll(campaignId: string, search?: string, limit: number = 50, offset: number = 0) {
   await ensureSystemLists(campaignId);
 
-  let sql = `SELECT * FROM lists WHERE campaign_id = $1 AND deleted_at IS NULL`;
+  let sql = `SELECT * FROM lists l WHERE ${campaignTreeScope("l", 1)} AND l.deleted_at IS NULL`;
   const params: any[] = [campaignId];
   let paramIndex = 2;
 
   if (search) {
-      sql += ` AND name ILIKE $${paramIndex++}`;
+      sql += ` AND l.name ILIKE $${paramIndex++}`;
       params.push(`%${search}%`);
   }
 
-  sql += ` ORDER BY is_favorite DESC, name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+  sql += ` ORDER BY l.is_favorite DESC, l.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
   params.push(limit, offset);
 
   return query(sql, params).then(r => r.rows);
@@ -79,7 +86,7 @@ export async function listsGetAll(campaignId: string, search?: string, limit: nu
 
 export async function listGet(campaignId: string, id: string) {
   const res = await query(
-    `SELECT * FROM lists WHERE id = $1 AND campaign_id = $2 AND deleted_at IS NULL`,
+    `SELECT * FROM lists l WHERE l.id = $1 AND ${campaignTreeScope("l", 2)} AND l.deleted_at IS NULL`,
     [id, campaignId]
   );
   return res.rows[0];
@@ -87,7 +94,10 @@ export async function listGet(campaignId: string, id: string) {
 
 export async function listDelete(campaignId: string, id: string) {
   // Soft Delete
-  await query(`UPDATE lists SET deleted_at = NOW() WHERE id = $1 AND campaign_id = $2`, [id, campaignId]);
+  await query(
+    `UPDATE lists l SET deleted_at = NOW() WHERE l.id = $1 AND ${campaignTreeScope("l", 2)}`,
+    [id, campaignId]
+  );
   return { success: true };
 }
 
@@ -95,14 +105,14 @@ export async function listDelete(campaignId: string, id: string) {
 export async function listUpdate(campaignId: string, id: string, data: any) {
     // Construcción dinámica de update (simplificada)
     await query(
-        `UPDATE lists 
+        `UPDATE lists l
          SET name = COALESCE($1, name),
              description = COALESCE($2, description),
              icon = COALESCE($3, icon),
              filters = COALESCE($4, filters),
              is_favorite = COALESCE($5, is_favorite),
              updated_at = NOW()
-         WHERE id = $6 AND campaign_id = $7`,
+         WHERE l.id = $6 AND ${campaignTreeScope("l", 7)}`,
         [data.name, data.description, data.icon, data.filters, data.isFavorite, id, campaignId]
     );
     return { success: true };
@@ -330,9 +340,13 @@ export async function listGetMembers(
 ) {
   // 1. Primero obtenemos la definición de la lista para ver sus filtros
   const listDef = await query(
-  `SELECT name, filters FROM lists WHERE id = $1 AND campaign_id = $2`,
-  [listId, campaignId]
-);
+    `SELECT name, filters
+     FROM lists l
+     WHERE l.id = $1
+       AND ${campaignTreeScope("l", 2)}
+       AND l.deleted_at IS NULL`,
+    [listId, campaignId]
+  );
 
   if (listDef.rows.length === 0) return null; // La lista no existe
 
@@ -401,7 +415,7 @@ export async function listGetMembers(
         count(*) OVER() as full_count
     FROM persons p
     JOIN global_citizens g ON p.citizen_id = g.id
-    WHERE p.campaign_id = $1 AND p.deleted_at IS NULL
+    WHERE ${campaignTreeScope("p", 1)} AND p.deleted_at IS NULL
     ${whereClause}
     ${searchClause}
     ${orderByClause}

@@ -1,4 +1,5 @@
 import { query } from "../../db/query";
+import { campaignTreeScope } from "../../common/campaign/scope";
 
 export async function contactCreate(input: {
   campaignId: string;
@@ -29,8 +30,8 @@ export async function contactCreate(input: {
 export async function contactsListForPerson(campaignId: string, personId: string, limit = 50) {
   const res = await query(
     `SELECT *
-     FROM contacts
-     WHERE campaign_id=$1 AND person_id=$2
+     FROM contacts c
+     WHERE ${campaignTreeScope("c", 1)} AND c.person_id=$2
      ORDER BY contact_at DESC
      LIMIT $3`,
     [campaignId, personId, limit]
